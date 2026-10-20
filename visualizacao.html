@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brainrot ao vivo</title>
+<style>
+  :root {
+    --fundo: #0d1117;
+    --painel: #151b23;
+    --borda: #262d38;
+    --texto: #d8dee9;
+    --suave: #8a94a6;
+    --exc: #4cc2ff;
+    --inib: #ff6b8a;
+    --grupo: #ffd166;
+    --ok: #5fd38d;
+    --ach: #5fd38d;
+    --na: #ff9f43;
+    --da: #c792ea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fundo);
+    color: var(--texto);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+    align-items: baseline;
+    padding: 14px 20px 6px;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .status { color: var(--suave); font-variant-numeric: tabular-nums; }
+  .status b { color: var(--texto); font-weight: 600; }
+  #conexao.ok { color: var(--ok); }
+  #conexao.erro { color: var(--inib); }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-rows: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    padding: 8px 20px;
+    height: calc(100vh - 140px);
+    min-height: 820px;
+  }
+  .painel {
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .painel.rede { grid-row: span 5; }
+  .painel h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+  .painel p { margin: 0 0 6px; color: var(--suave); font-size: 12px; }
+  .exc { color: var(--exc); }
+  .inib { color: var(--inib); }
+  .grupo { color: var(--grupo); }
+  .ach { color: var(--ach); }
+  .na { color: var(--na); }
+  .da { color: var(--da); }
+  canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+  #rede { cursor: pointer; }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    align-items: center;
+    padding: 10px 20px 18px;
+  }
+  button, select {
+    background: #1f2630;
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button:hover, select:hover { border-color: var(--suave); }
+  button.grupo { border-color: var(--grupo); }
+  button.da { border-color: var(--da); }
+  button.na { border-color: var(--na); }
+  label { display: inline-flex; gap: 6px; align-items: center; color: var(--suave); }
+  input[type=range] { width: 110px; accent-color: var(--exc); }
+  input[type=checkbox] { accent-color: var(--exc); }
+  output { color: var(--texto); min-width: 5ch; font-variant-numeric: tabular-nums; }
+  @media (max-width: 900px) {
+    main {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 440px repeat(5, 200px);
+      height: auto;
+      min-height: 0;
+      padding: 8px 16px;
+    }
+    .painel.rede { grid-row: auto; }
+    header, footer { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Brainrot ao vivo</h1>
+  <span class="status">t = <b id="tempo">0,0 s</b></span>
+  <span class="status">estado: <b id="estadoAtual">–</b></span>
+  <span class="status">taxa no último segundo: <b id="taxaE" class="exc">–</b> excitatórios · <b id="taxaI" class="inib">–</b> inibitórios</span>
+  <span class="status" id="conexao">conectando…</span>
+</header>
+
+<main>
+  <section class="painel rede">
+    <h2>Rede</h2>
+    <p>
+      Anel externo: <span id="nExc">–</span> neurônios <span class="exc">excitatórios</span>, com o <span class="grupo">grupo</span> que o botão estimula.
+      Anel interno: <span id="nInib">–</span> <span class="inib">inibitórios</span>. A cor é a voltagem e o brilho é um spike.
+      As linhas são as conexões E→E (mais claras = mais fortes). Durante um spike, as saídas do neurônio acendem.
+      Clique num neurônio para ver a voltagem dele e dê um clique duplo para estimulá-lo.
+    </p>
+    <canvas id="rede"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Raster</h2>
+    <p>Cada ponto é um spike nos últimos 2 s. Uma linha por neurônio; a faixa amarela é o grupo.</p>
+    <canvas id="raster"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Taxa da população</h2>
+    <p>Spikes por neurônio por segundo, em janelas de 20 ms: <span class="exc">excitatórios</span> e <span class="inib">inibitórios</span>.</p>
+    <canvas id="taxa"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Voltagem do neurônio <span id="selecionado">0</span></h2>
+    <p>Izhikevich (02) com sinapses AMPA, NMDA e GABA-A por condutância (01 e 03). Últimos 500 ms.</p>
+    <canvas id="voltagem"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Pesos E→E</h2>
+    <p id="resumoPesos">Distribuição de cada conjunto de 0 a w_max.</p>
+    <canvas id="pesos"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Moduladores (05)</h2>
+    <p id="resumoModuladores">
+      <span class="ach">acetilcolina</span>, <span class="na">noradrenalina</span>, <span class="da">dopamina fásica</span>
+      e o fator de plasticidade M (branco, escala à direita), nos últimos 10 s.
+    </p>
+    <canvas id="moduladores"></canvas>
+  </section>
+</main>
+
+<footer>
+  <button id="pausar">Pausar</button>
+  <label>Velocidade
+    <select id="velocidade">
+      <option value="50">0,05×</option>
+      <option value="100">0,1×</option>
+      <option value="250">0,25×</option>
+      <option value="500">0,5×</option>
+      <option value="1000">1× (tempo real)</option>
+      <option value="2000">2×</option>
+    </select>
+  </label>
+  <label>Entrada de fundo <input type="range" id="entradaFundo" min="0" max="2000" step="50"> <output id="entradaFundoValor"></output></label>
+  <label>NMDA/AMPA <input type="range" id="razaoNMDA" min="0" max="0.5" step="0.01"> <output id="razaoNMDAValor"></output></label>
+  <label><input type="checkbox" id="stp"> Depressão de curto prazo</label>
+  <label><input type="checkbox" id="stdp"> STDP (tripletos)</label>
+  <label><input type="checkbox" id="escalonamento"> Escalonamento</label>
+  <label><input type="checkbox" id="istdp"> iSTDP</label>
+  <label>Estado
+    <select id="estado">
+      <option value="vigilia">Acordado</option>
+      <option value="nrem">Sono NREM</option>
+      <option value="rem">Sono REM</option>
+    </select>
+  </label>
+  <button class="grupo" id="estimularGrupo">Estimular grupo</button>
+  <button class="da" id="recompensa">Recompensa (dopamina)</button>
+  <button class="na" id="surpresa">Surpresa (noradrenalina)</button>
+  <button id="estimularSelecionado">Estimular selecionado</button>
+  <button id="reiniciar">Reiniciar</button>
+</footer>
+
+<script>
+  const estilo = getComputedStyle(document.documentElement);
+  const cor = (nome) => estilo.getPropertyValue(nome).trim();
+  const cores = {
+    exc: cor("--exc"),
+    inib: cor("--inib"),
+    grupo: cor("--grupo"),
+    texto: cor("--texto"),
+    suave: cor("--suave"),
+    borda: cor("--borda"),
+    ach: cor("--ach"),
+    na: cor("--na"),
+    da: cor("--da"),
+  };
+  const JANELA_RASTER = 2000; // ms de simulação
+  const JANELA_VOLTAGEM = 500;
+  const JANELA_MODULADORES = 10000;
+  const BRILHO_SPIKE = 140; // ms reais que um spike fica aceso
+  const NOMES_DOS_ESTADOS = { vigilia: "acordado", nrem: "sono NREM", rem: "sono REM" };
+
+  let estrutura = null;
+  let pesos = null;
+  let saidas = [];
+  let noGrupo = new Set();
+  let ultimoSpike = new Float64Array(0); // performance.now() do último spike de cada neurônio
+  let tempo = 0;
+  let voltagens = [];
+  let spikes = []; // pares [neurônio, t]
+  let traco = []; // pares [t, v] do neurônio selecionado
+  let moduladores = []; // quíntuplas [t, ACh, NA, DA fásica, M]
+  let selecionado = 0;
+  let pausado = false;
+
+  const $ = (id) => document.getElementById(id);
+  const total = () => estrutura.nExc + estrutura.nInib;
+  const ehExcitatorio = (i) => i < estrutura.nExc;
+  const decimal = (x, casas = 1) => x.toFixed(casas).replace(".", ",");
+  const enviarControle = (mudancas) =>
+    fetch("/controle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mudancas) });
+
+  // --- Dados do servidor -------------------------------------------------------
+
+  const fonte = new EventSource("/estado");
+
+  fonte.onopen = () => {
+    $("conexao").textContent = "conectado";
+    $("conexao").className = "status ok";
+  };
+  fonte.onerror = () => {
+    $("conexao").textContent = "sem conexão: o node index.js está rodando?";
+    $("conexao").className = "status erro";
+  };
+
+  fonte.addEventListener("estrutura", (evento) => {
+    estrutura = JSON.parse(evento.data);
+    const n = total();
+    saidas = Array.from({ length: n }, () => []);
+    for (let k = 0; k < estrutura.sinapses.length / 2; k++) saidas[estrutura.sinapses[2 * k]].push(k);
+    noGrupo = new Set(estrutura.grupo);
+    ultimoSpike = new Float64Array(n).fill(-1e9);
+    spikes = [];
+    traco = [];
+    moduladores = [];
+    voltagens = new Array(n).fill(-65);
+    $("nExc").textContent = estrutura.nExc;
+    $("nInib").textContent = estrutura.nInib;
+    sincronizarControles(estrutura.config);
+  });
+
+  fonte.addEventListener("pesos", (evento) => {
+    pesos = JSON.parse(evento.data);
+  });
+
+  fonte.addEventListener("quadro", (evento) => {
+    if (!estrutura) return;
+    const quadro = JSON.parse(evento.data);
+    const agora = performance.now();
+    if (quadro.selecionado !== selecionado) {
+      selecionado = quadro.selecionado;
+      traco = [];
+    }
+    tempo = quadro.t;
+    voltagens = quadro.v;
+    for (let k = 0; k < quadro.spikes.length; k += 2) {
+      spikes.push(quadro.spikes[k], quadro.spikes[k + 1]);
+      ultimoSpike[quadro.spikes[k]] = agora;
+    }
+    quadro.traco.forEach((v, k) => traco.push(quadro.t - (quadro.traco.length - 1 - k) * estrutura.dt, v));
+    const { acetilcolina, noradrenalina, dopamina, plasticidade } = quadro.moduladores;
+    moduladores.push(quadro.t, acetilcolina, noradrenalina, dopamina, plasticidade);
+    descartarAntes(spikes, 1, tempo - JANELA_RASTER);
+    descartarAntes(traco, 0, tempo - JANELA_VOLTAGEM);
+    descartarAntes(moduladores, 0, tempo - JANELA_MODULADORES, 5);
+
+    pausado = quadro.pausado;
+    $("pausar").textContent = pausado ? "Continuar" : "Pausar";
+    $("velocidade").value = String(quadro.velocidade);
+    $("estado").value = quadro.estado;
+    $("estadoAtual").textContent = NOMES_DOS_ESTADOS[quadro.estado];
+    $("selecionado").textContent = selecionado;
+  });
+
+  // Remove do começo de uma lista de grupos de `tamanho` valores os grupos com tempo
+  // (posição `campo` do grupo) antes de `limite`
+  function descartarAntes(lista, campo, limite, tamanho = 2) {
+    let k = 0;
+    while (k < lista.length && lista[k + campo] < limite) k += tamanho;
+    if (k > 0) lista.splice(0, k);
+  }
+
+  // --- Controles -----------------------------------------------------------------
+
+  function sincronizarControles(config) {
+    $("entradaFundo").value = config.entradaFundo;
+    $("entradaFundoValor").textContent = `${config.entradaFundo} Hz`;
+    $("razaoNMDA").value = config.razaoNMDA;
+    $("razaoNMDAValor").textContent = decimal(config.razaoNMDA, 2);
+    for (const chave of ["stp", "stdp", "escalonamento", "istdp"]) $(chave).checked = config[chave];
+  }
+
+  $("pausar").onclick = () => enviarControle({ pausado: !pausado });
+  $("velocidade").onchange = (e) => enviarControle({ velocidade: Number(e.target.value) });
+  $("entradaFundo").oninput = (e) => {
+    $("entradaFundoValor").textContent = `${e.target.value} Hz`;
+    enviarControle({ entradaFundo: Number(e.target.value) });
+  };
+  $("razaoNMDA").oninput = (e) => {
+    $("razaoNMDAValor").textContent = decimal(Number(e.target.value), 2);
+    enviarControle({ razaoNMDA: Number(e.target.value) });
+  };
+  for (const chave of ["stp", "stdp", "escalonamento", "istdp"]) {
+    $(chave).onchange = (e) => enviarControle({ [chave]: e.target.checked });
+  }
+  $("estado").onchange = (e) => enviarControle({ estado: e.target.value });
+  $("estimularGrupo").onclick = () => enviarControle({ estimular: "grupo" });
+  $("recompensa").onclick = () => enviarControle({ recompensa: true });
+  $("surpresa").onclick = () => enviarControle({ surpresa: true });
+  $("estimularSelecionado").onclick = () => enviarControle({ estimular: "selecionado" });
+  $("reiniciar").onclick = () => enviarControle({ reiniciar: true });
+
+  // --- Desenho -----------------------------------------------------------------
+
+  // Ajusta o canvas ao tamanho na tela (com a densidade de pixels) e limpa
+  function preparar(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const largura = canvas.clientWidth;
+    const altura = canvas.clientHeight;
+    if (canvas.width !== Math.round(largura * dpr) || canvas.height !== Math.round(altura * dpr)) {
+      canvas.width = Math.round(largura * dpr);
+      canvas.height = Math.round(altura * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, largura, altura);
+    return { ctx, largura, altura };
+  }
+
+  function posicoes(largura, altura) {
+    const cx = largura / 2;
+    const cy = altura / 2;
+    const raio = Math.min(largura, altura) * 0.44;
+    return Array.from({ length: total() }, (_, i) => {
+      const externo = ehExcitatorio(i);
+      const quantos = externo ? estrutura.nExc : estrutura.nInib;
+      const j = externo ? i : i - estrutura.nExc;
+      const angulo = -Math.PI / 2 + (2 * Math.PI * (j + (externo ? 0 : 0.5))) / quantos;
+      const r = externo ? raio : raio * 0.5;
+      return [cx + r * Math.cos(angulo), cy + r * Math.sin(angulo)];
+    });
+  }
+
+  // −80 mV azul escuro → −60 mV verde-água → −40 mV âmbar
+  function corDaVoltagem(v) {
+    const paradas = [[27, 42, 74], [47, 143, 157], [242, 177, 52]];
+    const t = Math.min(1, Math.max(0, (v + 80) / 40)) * 2;
+    const k = Math.min(1, Math.floor(t));
+    const f = t - k;
+    const [a, b] = [paradas[k], paradas[k + 1]];
+    return `rgb(${a.map((c, i) => Math.round(c + (b[i] - c) * f)).join(",")})`;
+  }
+
+  // Desenha linhas agrupadas por opacidade (um stroke por grupo, em vez de um por linha)
+  function linhasPorOpacidade(ctx, grupos, corLinha, espessura) {
+    ctx.strokeStyle = corLinha;
+    ctx.lineWidth = espessura;
+    grupos.forEach((segmentos, nivel) => {
+      if (segmentos.length === 0) return;
+      ctx.globalAlpha = (nivel + 1) / grupos.length;
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of segmentos) {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      }
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  let ultimasPosicoes = [];
+
+  function desenharRede() {
+    const { ctx, largura, altura } = preparar($("rede"));
+    const pos = posicoes(largura, altura);
+    ultimasPosicoes = pos;
+    const agora = performance.now();
+    const raioNo = Math.max(3, Math.min(largura, altura) * 0.011);
+
+    // arco do grupo
+    const raio = Math.min(largura, altura) * 0.44;
+    const passo = (2 * Math.PI) / estrutura.nExc;
+    const inicio = -Math.PI / 2 + Math.min(...estrutura.grupo) * passo - passo / 2;
+    const fim = -Math.PI / 2 + Math.max(...estrutura.grupo) * passo + passo / 2;
+    ctx.strokeStyle = cores.grupo;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = raioNo * 4;
+    ctx.beginPath();
+    ctx.arc(largura / 2, altura / 2, raio, inicio, fim);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // conexões E→E, mais opacas quanto mais fortes
+    if (pesos) {
+      const niveis = 8;
+      const resto = Array.from({ length: niveis }, () => []);
+      const grupo = Array.from({ length: niveis }, () => []);
+      const wMax = estrutura.wMax.EE;
+      for (let k = 0; k < pesos.length; k++) {
+        const pre = estrutura.sinapses[2 * k];
+        const posNeuronio = estrutura.sinapses[2 * k + 1];
+        if (!ehExcitatorio(pre) || !ehExcitatorio(posNeuronio)) continue;
+        const nivel = Math.floor((pesos[k] / wMax) ** 0.7 * niveis);
+        if (nivel <= 0) continue;
+        const destino = noGrupo.has(pre) && noGrupo.has(posNeuronio) ? grupo : resto;
+        destino[Math.min(niveis - 1, nivel)].push([...pos[pre], ...pos[posNeuronio]]);
+      }
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      // fora do grupo, os dois níveis mais fracos ficam de fora para a rede não virar um borrão
+      linhasPorOpacidade(ctx, resto.map((segmentos, nivel) => (nivel < 2 ? [] : segmentos)), "rgba(76,194,255,0.13)", 0.6);
+      linhasPorOpacidade(ctx, grupo, "rgba(255,209,102,0.7)", 1.1);
+      ctx.restore();
+    }
+
+    // saídas dos neurônios que acabaram de disparar
+    const niveisAtivos = 4;
+    const ativasE = Array.from({ length: niveisAtivos }, () => []);
+    const ativasI = Array.from({ length: niveisAtivos }, () => []);
+    for (let i = 0; i < pos.length; i++) {
+      const idade = agora - ultimoSpike[i];
+      if (idade > BRILHO_SPIKE) continue;
+      const nivel = Math.min(niveisAtivos - 1, Math.floor((1 - idade / BRILHO_SPIKE) * niveisAtivos));
+      const destino = ehExcitatorio(i) ? ativasE : ativasI;
+      for (const k of saidas[i]) destino[nivel].push([...pos[i], ...pos[estrutura.sinapses[2 * k + 1]]]);
+    }
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    linhasPorOpacidade(ctx, ativasE, "rgba(76,194,255,0.25)", 0.8);
+    linhasPorOpacidade(ctx, ativasI, "rgba(255,107,138,0.25)", 0.8);
+    ctx.restore();
+
+    // neurônios
+    for (let i = 0; i < pos.length; i++) {
+      const [x, y] = pos[i];
+      ctx.fillStyle = corDaVoltagem(voltagens[i] ?? -65);
+      ctx.strokeStyle = ehExcitatorio(i) ? cores.exc : cores.inib;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      if (ehExcitatorio(i)) ctx.arc(x, y, raioNo, 0, 2 * Math.PI);
+      else ctx.rect(x - raioNo, y - raioNo, 2 * raioNo, 2 * raioNo);
+      ctx.fill();
+      ctx.stroke();
+
+      const idade = agora - ultimoSpike[i];
+      if (idade < BRILHO_SPIKE) {
+        ctx.fillStyle = "#ffffff";
+        ctx.globalAlpha = 0.85 * (1 - idade / BRILHO_SPIKE);
+        ctx.beginPath();
+        ctx.arc(x, y, raioNo * 1.35, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      if (i === selecionado) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(x, y, raioNo + 4, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function desenharRaster() {
+    const { ctx, largura, altura } = preparar($("raster"));
+    const n = total();
+    const inicio = tempo - JANELA_RASTER;
+    const linhaY = (i) => ((i + 0.5) / n) * altura;
+
+    ctx.fillStyle = cores.grupo;
+    ctx.globalAlpha = 0.1;
+    for (const i of estrutura.grupo) ctx.fillRect(0, linhaY(i) - altura / n / 2, largura, altura / n);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = cores.borda;
+    ctx.beginPath();
+    ctx.moveTo(0, (estrutura.nExc / n) * altura);
+    ctx.lineTo(largura, (estrutura.nExc / n) * altura);
+    ctx.stroke();
+
+    for (const [corPonto, filtro] of [[cores.exc, true], [cores.inib, false]]) {
+      ctx.fillStyle = corPonto;
+      for (let k = 0; k < spikes.length; k += 2) {
+        if (ehExcitatorio(spikes[k]) !== filtro) continue;
+        const x = ((spikes[k + 1] - inicio) / JANELA_RASTER) * largura;
+        ctx.fillRect(x - 1, linhaY(spikes[k]) - 1, 2, 2);
+      }
+    }
+    rotulosDeTempo(ctx, largura, altura, "−2 s");
+  }
+
+  function rotulosDeTempo(ctx, largura, altura, esquerda) {
+    ctx.fillStyle = cores.suave;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "left";
+    ctx.fillText(esquerda, 2, altura - 1);
+    ctx.textAlign = "right";
+    ctx.fillText("agora", largura - 2, altura - 1);
+  }
+
+  function desenharTaxa() {
+    const { ctx, largura, altura } = preparar($("taxa"));
+    const largura_janela = 20;
+    const caixas = JANELA_RASTER / largura_janela;
+    const inicio = tempo - JANELA_RASTER;
+    const contagens = { e: new Array(caixas).fill(0), i: new Array(caixas).fill(0) };
+    for (let k = 0; k < spikes.length; k += 2) {
+      const caixa = Math.floor((spikes[k + 1] - inicio) / largura_janela);
+      if (caixa < 0 || caixa >= caixas) continue;
+      contagens[ehExcitatorio(spikes[k]) ? "e" : "i"][caixa]++;
+    }
+    const segundos = largura_janela / 1000;
+    const taxaE = contagens.e.map((c) => c / estrutura.nExc / segundos);
+    const taxaI = contagens.i.map((c) => c / estrutura.nInib / segundos);
+    const maximo = Math.max(20, ...taxaE, ...taxaI) * 1.1;
+    const margemTopo = 14;
+
+    for (const [serie, corLinha] of [[taxaI, cores.inib], [taxaE, cores.exc]]) {
+      ctx.strokeStyle = corLinha;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      serie.forEach((taxa, caixa) => {
+        const x = ((caixa + 0.5) / caixas) * largura;
+        const y = altura - (taxa / maximo) * (altura - margemTopo);
+        caixa === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+    ctx.fillStyle = cores.suave;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${Math.round(maximo)} Hz`, 2, 0);
+    rotulosDeTempo(ctx, largura, altura, "−2 s");
+  }
+
+  function desenharVoltagem() {
+    const { ctx, largura, altura } = preparar($("voltagem"));
+    const vMin = -90;
+    const vMax = 40;
+    const y = (v) => altura - ((v - vMin) / (vMax - vMin)) * altura;
+    const inicio = tempo - JANELA_VOLTAGEM;
+
+    ctx.strokeStyle = cores.borda;
+    ctx.setLineDash([4, 4]);
+    ctx.fillStyle = cores.suave;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    for (const v of [-65, 0]) {
+      ctx.beginPath();
+      ctx.moveTo(0, y(v));
+      ctx.lineTo(largura, y(v));
+      ctx.stroke();
+      ctx.fillText(`${v} mV`, 2, y(v) - 1);
+    }
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = ehExcitatorio(selecionado) ? cores.exc : cores.inib;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let k = 0; k < traco.length; k += 2) {
+      const x = ((traco[k] - inicio) / JANELA_VOLTAGEM) * largura;
+      k === 0 ? ctx.moveTo(x, y(traco[k + 1])) : ctx.lineTo(x, y(traco[k + 1]));
+    }
+    ctx.stroke();
+    rotulosDeTempo(ctx, largura, altura, "−500 ms");
+  }
+
+  function desenharPesos() {
+    const { ctx, largura, altura } = preparar($("pesos"));
+    if (!pesos) return;
+    const caixas = 25;
+    const wMax = estrutura.wMax.EE;
+    const series = { grupo: new Array(caixas).fill(0), resto: new Array(caixas).fill(0) };
+    const somas = { grupo: 0, resto: 0 };
+    const quantos = { grupo: 0, resto: 0 };
+    for (let k = 0; k < pesos.length; k++) {
+      const pre = estrutura.sinapses[2 * k];
+      const posNeuronio = estrutura.sinapses[2 * k + 1];
+      if (!ehExcitatorio(pre) || !ehExcitatorio(posNeuronio)) continue;
+      const conjunto = noGrupo.has(pre) && noGrupo.has(posNeuronio) ? "grupo" : "resto";
+      series[conjunto][Math.min(caixas - 1, Math.floor((pesos[k] / wMax) * caixas))]++;
+      somas[conjunto] += pesos[k];
+      quantos[conjunto]++;
+    }
+    // cada conjunto como fração do próprio total, para os dois aparecerem na mesma escala
+    const fracoes = Object.fromEntries(Object.entries(series).map(([nome, s]) => [nome, s.map((c) => c / Math.max(1, quantos[nome]))]));
+    const maximo = Math.max(...fracoes.grupo, ...fracoes.resto, 0.01);
+    const larguraCaixa = largura / caixas;
+    const margemTopo = 4;
+    for (const [nome, corBarra] of [["resto", cores.exc], ["grupo", cores.grupo]]) {
+      ctx.fillStyle = corBarra;
+      ctx.globalAlpha = nome === "resto" ? 0.6 : 0.75;
+      fracoes[nome].forEach((f, caixa) => {
+        const h = (f / maximo) * (altura - margemTopo - 14);
+        ctx.fillRect(caixa * larguraCaixa + 1, altura - 14 - h, larguraCaixa - 2, h);
+      });
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cores.suave;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "left";
+    ctx.fillText("0", 2, altura);
+    ctx.textAlign = "right";
+    ctx.fillText(`w_max = ${decimal(wMax, 2)}`, largura - 2, altura);
+
+    const mediaGrupo = somas.grupo / Math.max(1, quantos.grupo);
+    const mediaResto = somas.resto / Math.max(1, quantos.resto);
+    $("resumoPesos").innerHTML =
+      `Peso médio <span class="grupo">dentro do grupo ${decimal(mediaGrupo, 4)}</span> · ` +
+      `<span class="exc">resto ${decimal(mediaResto, 4)}</span>. Cada conjunto aparece como fração do próprio total.`;
+  }
+
+  // Os níveis (ACh, NA, dopamina) usam a escala 0–1,2 à esquerda; M, que chega a ~7 com dopamina,
+  // usa a sua própria escala, à direita
+  function desenharModuladores() {
+    const { ctx, largura, altura } = preparar($("moduladores"));
+    const inicio = tempo - JANELA_MODULADORES;
+    const margemTopo = 14;
+    const NIVEL_MAXIMO = 1.2;
+    let maximoM = 1.2;
+    for (let k = 0; k < moduladores.length; k += 5) maximoM = Math.max(maximoM, moduladores[k + 4] * 1.1);
+    const escalas = {
+      nivel: (valor) => altura - (Math.min(valor, NIVEL_MAXIMO) / NIVEL_MAXIMO) * (altura - margemTopo),
+      m: (valor) => altura - (valor / maximoM) * (altura - margemTopo),
+    };
+
+    // M = 1 é a plasticidade normal acordado
+    ctx.strokeStyle = cores.borda;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, escalas.m(1));
+    ctx.lineTo(largura, escalas.m(1));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const series = [[4, "#ffffff", escalas.m], [1, cores.ach, escalas.nivel], [2, cores.na, escalas.nivel], [3, cores.da, escalas.nivel]];
+    for (const [campo, corLinha, y] of series) {
+      ctx.strokeStyle = corLinha;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = campo === 4 ? 0.6 : 1;
+      ctx.beginPath();
+      for (let k = 0; k < moduladores.length; k += 5) {
+        const x = ((moduladores[k] - inicio) / JANELA_MODULADORES) * largura;
+        k === 0 ? ctx.moveTo(x, y(moduladores[k + campo])) : ctx.lineTo(x, y(moduladores[k + campo]));
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cores.suave;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillText(`níveis 0–${decimal(NIVEL_MAXIMO, 1)}`, 2, 0);
+    ctx.textAlign = "right";
+    ctx.fillText(`M 0–${decimal(maximoM, 1)}`, largura - 2, 0);
+    rotulosDeTempo(ctx, largura, altura, "−10 s");
+
+    const n = moduladores.length;
+    if (n >= 5) {
+      const [ach, na, da, m] = moduladores.slice(n - 4);
+      $("resumoModuladores").innerHTML =
+        `<span class="ach">ACh ${decimal(ach, 2)}</span> · <span class="na">NA ${decimal(na, 2)}</span> · ` +
+        `<span class="da">dopamina fásica ${decimal(da, 2)}</span> · M ${decimal(m, 2)} (fator de plasticidade; ` +
+        `tracejado = 1, o normal acordado). Últimos 10 s.`;
+    }
+  }
+
+  function atualizarCabecalho() {
+    $("tempo").textContent = `${decimal(tempo / 1000)} s`;
+    let e = 0;
+    let i = 0;
+    for (let k = 0; k < spikes.length; k += 2) {
+      if (spikes[k + 1] < tempo - 1000) continue;
+      ehExcitatorio(spikes[k]) ? e++ : i++;
+    }
+    const segundos = Math.min(1, tempo / 1000) || 1;
+    $("taxaE").textContent = `${decimal(e / estrutura.nExc / segundos)} Hz`;
+    $("taxaI").textContent = `${decimal(i / estrutura.nInib / segundos)} Hz`;
+  }
+
+  function desenhar() {
+    if (estrutura) {
+      desenharRede();
+      desenharRaster();
+      desenharTaxa();
+      desenharVoltagem();
+      desenharPesos();
+      desenharModuladores();
+      atualizarCabecalho();
+    }
+    requestAnimationFrame(desenhar);
+  }
+  requestAnimationFrame(desenhar);
+
+  // --- Clique na rede --------------------------------------------------------------
+
+  function neuronioNoPonto(evento) {
+    const caixa = $("rede").getBoundingClientRect();
+    const x = evento.clientX - caixa.left;
+    const y = evento.clientY - caixa.top;
+    let melhor = -1;
+    let menorDistancia = 14 ** 2;
+    ultimasPosicoes.forEach(([px, py], i) => {
+      const distancia = (px - x) ** 2 + (py - y) ** 2;
+      if (distancia < menorDistancia) {
+        menorDistancia = distancia;
+        melhor = i;
+      }
+    });
+    return melhor;
+  }
+
+  $("rede").addEventListener("click", (evento) => {
+    const i = neuronioNoPonto(evento);
+    if (i >= 0) enviarControle({ selecionado: i });
+  });
+  $("rede").addEventListener("dblclick", (evento) => {
+    const i = neuronioNoPonto(evento);
+    if (i >= 0) enviarControle({ selecionado: i, estimular: "selecionado" });
+  });
+</script>
+</body>
+</html>

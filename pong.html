@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brainrot no Pong</title>
+<style>
+  :root {
+    --fundo: #0d1117;
+    --painel: #151b23;
+    --campo: #0a0e13;
+    --borda: #262d38;
+    --texto: #d8dee9;
+    --suave: #8a94a6;
+    --cerebro: #4cc2ff;
+    --algoritmo: #ff9f43;
+    --acima: #ffd166;
+    --abaixo: #5fd38d;
+    --subindo: #f78c6c;
+    --descendo: #89ddff;
+    --subir: #4cc2ff;
+    --descer: #c792ea;
+    --inib: #ff6b8a;
+    --ok: #5fd38d;
+    --erro: #ff6b8a;
+    --da: #c792ea;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--fundo);
+    color: var(--texto);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 24px;
+    align-items: baseline;
+    padding: 14px 20px 6px;
+  }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  .status { color: var(--suave); font-variant-numeric: tabular-nums; }
+  .status b { color: var(--texto); font-weight: 600; }
+  #conexao.ok { color: var(--ok); }
+  #conexao.erro { color: var(--erro); }
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    padding: 8px 20px;
+    height: calc(100vh - 130px);
+    min-height: 760px;
+  }
+  .painel {
+    background: var(--painel);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .painel.campo { grid-row: span 3; }
+  .painel h2 { font-size: 13px; margin: 0 0 2px; font-weight: 600; }
+  .painel p { margin: 0 0 6px; color: var(--suave); font-size: 12px; }
+  .cerebro { color: var(--cerebro); }
+  .algoritmo { color: var(--algoritmo); }
+  .acima { color: var(--acima); }
+  .abaixo { color: var(--abaixo); }
+  .subir { color: var(--subir); }
+  .descer { color: var(--descer); }
+  .inib { color: var(--inib); }
+  .ok { color: var(--ok); }
+  .erro { color: var(--erro); }
+  .da { color: var(--da); }
+  canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+  footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    align-items: center;
+    padding: 10px 20px 18px;
+  }
+  button, select, input[type=number] {
+    background: #1f2630;
+    color: var(--texto);
+    border: 1px solid var(--borda);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+  }
+  button, select { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--suave); }
+  input[type=number] { width: 6ch; padding: 6px 8px; }
+  label { display: inline-flex; gap: 6px; align-items: center; color: var(--suave); }
+  input[type=range] { width: 110px; accent-color: var(--algoritmo); }
+  input[type=checkbox] { accent-color: var(--cerebro); }
+  output { color: var(--texto); min-width: 6ch; font-variant-numeric: tabular-nums; }
+  .separador { width: 1px; align-self: stretch; background: var(--borda); }
+  @media (max-width: 900px) {
+    main {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 420px repeat(5, 200px);
+      height: auto;
+      min-height: 0;
+      padding: 8px 16px;
+    }
+    .painel.campo { grid-row: auto; }
+    header, footer { padding-left: 16px; padding-right: 16px; }
+    .separador { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pong: <span class="cerebro">cérebro</span> × <span class="algoritmo">algoritmo</span></h1>
+  <span class="status">t = <b id="tempo">0,0 s</b></span>
+  <span class="status">rebatidas do cérebro: <b id="ultimas">–</b> nas últimas 50 · <b id="total">–</b> no total</span>
+  <span class="status" id="treino">–</span>
+  <span class="status" id="conexao">conectando…</span>
+</header>
+
+<main>
+  <section class="painel campo">
+    <h2>Campo</h2>
+    <p>
+      À esquerda, o <span class="cerebro">cérebro</span>: o que ele sente da bola chega ao córtex em spikes, os núcleos da base escolhem
+      <span class="subir">subir</span> ou <span class="descer">descer</span> (a raquete anda na proporção de quanto cada alça abriu),
+      e a dopamina da VTA só vem quando ele rebate (errar não pune).
+      <span id="sobreOAdversario">À direita, um <span class="algoritmo">algoritmo</span>: o seguidor persegue a altura da bola, o previsor calcula onde ela vai chegar,
+      e o excelente também mira com a ponta da raquete para longe do cérebro. A bola sai mais inclinada quanto mais longe do centro da raquete bate,
+      e acelera a cada rebatida.</span>
+    </p>
+    <canvas id="campo"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Córtex</h2>
+    <p>Spikes dos últimos 2 s, uma linha por neurônio: <span id="legendaDosCanais">os canais</span>, o resto dos excitatórios e os <span class="inib">inibitórios</span>.</p>
+    <canvas id="raster"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Núcleos da base</h2>
+    <p>
+      A alça de <span class="subir">subir</span> e a de <span class="descer">descer</span> (o quanto o GPi soltou cada uma), nos últimos 10 s.
+      A raquete anda na proporção da diferença entre as duas.
+    </p>
+    <canvas id="alcas"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Dopamina (VTA)</h2>
+    <p>
+      O erro de previsão com as pausas, que ensina o estriado, nos últimos 10 s.
+      <span class="ok">▲ rebatida</span> · <span class="erro">▼ erro do cérebro</span> · <span class="algoritmo">● ponto do cérebro</span>
+    </p>
+    <canvas id="dopamina"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Aprendizado</h2>
+    <p>Fração de rebatidas do cérebro a cada 20 jogadas. A linha tracejada é a raquete com ações ao acaso (~22%).</p>
+    <canvas id="aprendizado"></canvas>
+  </section>
+
+  <section class="painel">
+    <h2>Pesos córtex → estriado</h2>
+    <p>Linha: ação; coluna: canal sensorial do córtex. As células com borda verde são o mapa certo (bola acima ou subindo → subir; abaixo ou descendo → descer). Todas começam ao acaso.</p>
+    <canvas id="pesos"></canvas>
+  </section>
+</main>
+
+<footer>
+  <button id="pausar">Pausar</button>
+  <label>Velocidade
+    <select id="velocidade">
+      <option value="250">0,25×</option>
+      <option value="500">0,5×</option>
+      <option value="1000">1× (tempo real)</option>
+      <option value="2000">2×</option>
+      <option value="4000">4×</option>
+      <option value="0">o máximo</option>
+    </select>
+  </label>
+  <span class="separador"></span>
+  <span id="controlesDoAdversario" style="display: contents">
+  <label><span class="algoritmo">Algoritmo:</span>
+    <select id="tipoAdversario">
+      <option value="seguidor">seguidor</option>
+      <option value="previsor">previsor</option>
+      <option value="excelente">excelente</option>
+    </select>
+  </label>
+  <label>velocidade <input type="range" id="velocidadeAdversario" min="0.05" max="1.2" step="0.05"> <output id="velocidadeAdversarioValor"></output></label>
+  <label>reação <input type="range" id="reacao" min="0" max="800" step="50"> <output id="reacaoValor"></output></label>
+  <label title="o quanto o previsor e o excelente erram ao ler onde a bola vai chegar (0 = perfeito e imbatível)">erro de leitura <input type="range" id="erroAdversario" min="0" max="0.8" step="0.05"> <output id="erroAdversarioValor"></output></label>
+  </span>
+  <button id="zerarPlacar">Zerar placar</button>
+  <span class="separador"></span>
+  <label>Semente <input type="number" id="semente" min="1" step="1" value="1"></label>
+  <label><input type="checkbox" id="comDopamina" checked> com dopamina</label>
+  <button id="reiniciar">Reiniciar o cérebro</button>
+  <button id="salvar" title="salva o que o cérebro aprendeu até agora; depois rode node index.js --pong --carregar --semente=N">Salvar cérebro</button>
+</footer>
+
+<script>
+  const estilo = getComputedStyle(document.documentElement);
+  const cor = (nome) => estilo.getPropertyValue(nome).trim();
+  const cores = {
+    texto: cor("--texto"),
+    suave: cor("--suave"),
+    borda: cor("--borda"),
+    campo: cor("--campo"),
+    cerebro: cor("--cerebro"),
+    algoritmo: cor("--algoritmo"),
+    inib: cor("--inib"),
+    ok: cor("--ok"),
+    erro: cor("--erro"),
+    da: cor("--da"),
+  };
+  // a cor de cada canal pelo nome que o servidor manda
+  const corDoCanal = {
+    "bola acima": cor("--acima"),
+    "bola abaixo": cor("--abaixo"),
+    "bola subindo": cor("--subindo"),
+    "bola descendo": cor("--descendo"),
+    subir: cor("--subir"),
+    descer: cor("--descer"),
+  };
+  // o mapa certo: cada ação e os canais sensoriais que deviam acioná-la
+  const mapaCerto = { subir: ["bola acima", "bola subindo"], descer: ["bola abaixo", "bola descendo"] };
+  const JANELA_RASTER = 2000; // ms de simulação
+  const JANELA_SINAIS = 10000;
+  const RASTRO = 250; // ms de simulação do rastro da bola
+  const BRILHO = 450; // ms reais que um evento fica aceso no campo
+  const PESO_MAXIMO = 1.5;
+  // vêm da estrutura: os nomes dos canais, as ações e as entradas do estriado; cada amostra é
+  // [t, dopamina, a alça de cada canal, a taxa de cada canal]
+  let nomesDosCanais = [];
+  let coresDosCanais = [];
+  let ACOES = [];
+  let ENTRADAS = [];
+  let CAMPOS_DA_AMOSTRA = 2;
+
+  let estrutura = null;
+  let quadro = null;
+  let corDoNeuronio = [];
+  let spikes = []; // pares [neurônio, t]
+  let amostras = []; // grupos de CAMPOS_DA_AMOSTRA
+  let eventos = []; // { t, tipo, chegou }
+  let rastro = []; // trios [t, x, y]
+  let tempo = 0;
+  let pausado = false;
+
+  const $ = (id) => document.getElementById(id);
+  const decimal = (x, casas = 1) => x.toFixed(casas).replace(".", ",");
+  const porcento = (x) => (Number.isFinite(x) ? `${Math.round(100 * x)}%` : "–");
+  const enviarControle = (mudancas) =>
+    fetch("/controle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mudancas) });
+
+  // Remove do começo de uma lista de grupos de `tamanho` valores os grupos com tempo
+  // (posição `campo` do grupo) antes de `limite`
+  function descartarAntes(lista, campo, limite, tamanho = 2) {
+    let k = 0;
+    while (k < lista.length && lista[k + campo] < limite) k += tamanho;
+    if (k > 0) lista.splice(0, k);
+  }
+
+  // --- Dados do servidor -------------------------------------------------------
+
+  const fonte = new EventSource("/estado");
+
+  fonte.onopen = () => {
+    $("conexao").textContent = "conectado";
+    $("conexao").className = "status ok";
+  };
+  fonte.onerror = () => {
+    $("conexao").textContent = "sem conexão: o node index.js --pong está rodando?";
+    $("conexao").className = "status erro";
+  };
+
+  fonte.addEventListener("estrutura", (evento) => {
+    estrutura = JSON.parse(evento.data);
+    nomesDosCanais = estrutura.nomesDosCanais;
+    coresDosCanais = nomesDosCanais.map((nome) => corDoCanal[nome] ?? cores.suave);
+    ACOES = estrutura.acoes;
+    ENTRADAS = estrutura.entradas;
+    CAMPOS_DA_AMOSTRA = 2 + 2 * nomesDosCanais.length;
+    $("legendaDosCanais").innerHTML =
+      "canais " + nomesDosCanais.map((nome, k) => `<span style="color: ${coresDosCanais[k]}">${nome}</span>`).join(", ");
+    const doManus = estrutura.fisica === "manus";
+    $("controlesDoAdversario").style.display = doManus ? "none" : "contents";
+    if (doManus) {
+      $("sobreOAdversario").textContent =
+        "À direita, o v1 do Manus: mira parte do caminho da bola e anda a até 3,4/s. A física é a do Pong do Manus: raquetes de 40% da altura, bola que acelera 1% por rebatida e ganha efeito pelo ponto de contato.";
+    }
+    const n = estrutura.nExc + estrutura.nInib;
+    corDoNeuronio = Array.from({ length: n }, (_, i) => {
+      if (i >= estrutura.nExc) return cores.inib;
+      const canal = estrutura.canais.findIndex(([de, ate]) => i >= de && i <= ate);
+      return canal >= 0 ? coresDosCanais[canal] : cores.suave;
+    });
+    spikes = [];
+    amostras = [];
+    eventos = [];
+    rastro = [];
+    $("semente").value = estrutura.semente;
+    $("comDopamina").checked = estrutura.comDopamina;
+  });
+
+  fonte.addEventListener("quadro", (evento) => {
+    if (!estrutura) return;
+    quadro = JSON.parse(evento.data);
+    const agora = performance.now();
+    if (quadro.t < tempo) {
+      spikes = [];
+      amostras = [];
+      eventos = [];
+      rastro = [];
+    }
+    tempo = quadro.t;
+    for (const valor of quadro.spikes) spikes.push(valor);
+    for (const valor of quadro.amostras) amostras.push(valor);
+    for (const e of quadro.eventos) eventos.push({ ...e, chegou: agora });
+    rastro.push(tempo, quadro.posicoes.bolaX, quadro.posicoes.bolaY);
+    descartarAntes(spikes, 1, tempo - JANELA_RASTER);
+    descartarAntes(amostras, 0, tempo - JANELA_SINAIS, CAMPOS_DA_AMOSTRA);
+    descartarAntes(rastro, 0, tempo - RASTRO, 3);
+    eventos = eventos.filter((e) => e.t >= tempo - JANELA_SINAIS);
+
+    pausado = quadro.pausado;
+    $("pausar").textContent = pausado ? "Continuar" : "Pausar";
+    $("velocidade").value = String(quadro.velocidade);
+    $("tempo").textContent = `${decimal(tempo / 1000)} s`;
+    const ultimas = quadro.ultimas.split("").map(Number);
+    $("ultimas").textContent = ultimas.length ? porcento(ultimas.reduce((s, x) => s + x, 0) / ultimas.length) : "–";
+    $("total").textContent = quadro.jogadas ? `${porcento(quadro.rebatidas / quadro.jogadas)} de ${quadro.jogadas} jogadas` : "–";
+    const minutos = Math.round((estrutura.experienciaAnterior + tempo / 1000) / 60);
+    const salvo = estrutura.arquivo ? ` · salvo em ${estrutura.arquivo.split(/[\\/]/).pop()}` : "";
+    $("treino").textContent = `${estrutura.comDopamina ? "aprendendo (com dopamina)" : "sem dopamina: não aprende"} · ${minutos} min de jogo${salvo}`;
+    sincronizarAdversario(quadro.adversario);
+  });
+
+  // --- Controles -----------------------------------------------------------------
+
+  let mexendoNoAdversario = false;
+  function sincronizarAdversario({ tipo, velocidade, reacao, erro = 0 }) {
+    if (mexendoNoAdversario) return;
+    if (document.activeElement !== $("tipoAdversario")) $("tipoAdversario").value = tipo;
+    $("velocidadeAdversario").value = velocidade;
+    $("velocidadeAdversarioValor").textContent = `${decimal(velocidade, 2)} /s`;
+    $("reacao").value = reacao;
+    $("reacaoValor").textContent = `${reacao} ms`;
+    $("erroAdversario").value = erro;
+    $("erroAdversarioValor").textContent = decimal(erro, 2);
+  }
+  for (const id of ["velocidadeAdversario", "reacao", "erroAdversario"]) {
+    $(id).onpointerdown = () => (mexendoNoAdversario = true);
+    $(id).onpointerup = () => (mexendoNoAdversario = false);
+    $(id).oninput = () => {
+      const velocidade = Number($("velocidadeAdversario").value);
+      const reacao = Number($("reacao").value);
+      const erro = Number($("erroAdversario").value);
+      $("velocidadeAdversarioValor").textContent = `${decimal(velocidade, 2)} /s`;
+      $("reacaoValor").textContent = `${reacao} ms`;
+      $("erroAdversarioValor").textContent = decimal(erro, 2);
+      enviarControle({ adversario: { velocidade, reacao, erro } });
+    };
+  }
+  $("tipoAdversario").onchange = (e) => enviarControle({ adversario: { tipo: e.target.value } });
+  $("pausar").onclick = () => enviarControle({ pausado: !pausado });
+  $("velocidade").onchange = (e) => enviarControle({ velocidade: Number(e.target.value) });
+  $("zerarPlacar").onclick = () => enviarControle({ zerarPlacar: true });
+  $("salvar").onclick = () => enviarControle({ salvar: true });
+  $("reiniciar").onclick = () =>
+    enviarControle({ reiniciar: { semente: Math.max(1, Math.round(Number($("semente").value) || 1)), comDopamina: $("comDopamina").checked } });
+
+  // --- Desenho -----------------------------------------------------------------
+
+  // Ajusta o canvas ao tamanho na tela (com a densidade de pixels) e limpa
+  function preparar(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const largura = canvas.clientWidth;
+    const altura = canvas.clientHeight;
+    if (canvas.width !== Math.round(largura * dpr) || canvas.height !== Math.round(altura * dpr)) {
+      canvas.width = Math.round(largura * dpr);
+      canvas.height = Math.round(altura * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, largura, altura);
+    return { ctx, largura, altura };
+  }
+
+  const ultimaAmostra = () => (amostras.length ? amostras.slice(-CAMPOS_DA_AMOSTRA) : null);
+
+  function desenharCampo() {
+    const { ctx, largura, altura } = preparar($("campo"));
+    if (!quadro) return;
+    // o campo na proporção 4:3 dos fliperamas, no centro do espaço que houver
+    const folga = 12;
+    const L = Math.max(0, Math.min(largura - 2 * folga, ((altura - 2 * folga) * 4) / 3));
+    const A = (L * 3) / 4;
+    const esquerda = (largura - L) / 2;
+    const topo = (altura - A) / 2;
+    const px = (x) => esquerda + x * L;
+    const py = (y) => topo + (1 - y) * A; // y = 1 é o alto do campo
+    const agora = performance.now();
+    const { bolaX, bolaY, raquete, adversario, meiaRaquete } = quadro.posicoes;
+
+    ctx.fillStyle = cores.campo;
+    ctx.fillRect(esquerda, topo, L, A);
+    ctx.strokeStyle = cores.borda;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(esquerda, topo, L, A);
+    ctx.setLineDash([6, 8]);
+    ctx.beginPath();
+    ctx.moveTo(px(0.5), topo);
+    ctx.lineTo(px(0.5), topo + A);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // placar
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = `600 ${Math.max(28, A * 0.12)}px system-ui, sans-serif`;
+    ctx.fillStyle = cores.cerebro;
+    ctx.fillText(String(quadro.placar.cerebro), px(0.38), topo + 10);
+    ctx.fillStyle = cores.algoritmo;
+    ctx.fillText(String(quadro.placar.algoritmo), px(0.62), topo + 10);
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillStyle = cores.suave;
+    const altoDoPlacar = topo + 14 + Math.max(28, A * 0.12);
+    ctx.fillText("cérebro", px(0.38), altoDoPlacar);
+    ctx.fillText(estrutura.fisica === "manus" ? "v1 do Manus" : "algoritmo", px(0.62), altoDoPlacar);
+
+    // brilhos dos eventos recentes (em tempo real)
+    for (const e of eventos) {
+      const idade = agora - e.chegou;
+      if (idade > BRILHO) continue;
+      const forca = 1 - idade / BRILHO;
+      const x = e.tipo === "ponto" ? px(1) : px(0);
+      const corDoEvento = e.tipo === "rebatida" ? cores.ok : e.tipo === "erro" ? cores.erro : e.tipo === "ponto" ? cores.algoritmo : null;
+      if (!corDoEvento) continue;
+      const gradiente = ctx.createRadialGradient(x, py(e.tipo === "rebatida" ? raquete : 0.5), 0, x, py(e.tipo === "rebatida" ? raquete : 0.5), A * 0.6);
+      gradiente.addColorStop(0, corDoEvento);
+      gradiente.addColorStop(1, "transparent");
+      ctx.globalAlpha = 0.35 * forca;
+      ctx.fillStyle = gradiente;
+      ctx.fillRect(esquerda, topo, L, A);
+      ctx.globalAlpha = 1;
+    }
+
+    // raquetes
+    const larguraDaRaquete = Math.max(6, L * 0.014);
+    const desenharRaquete = (x, y, corDaRaquete) => {
+      ctx.fillStyle = corDaRaquete;
+      ctx.fillRect(x - larguraDaRaquete / 2, py(Math.min(1, y + meiaRaquete)), larguraDaRaquete, py(Math.max(0, y - meiaRaquete)) - py(Math.min(1, y + meiaRaquete)));
+    };
+    const [linhaDoCerebro, linhaDoAdversario] = quadro.posicoes.linhas ?? [0, 1];
+    desenharRaquete(px(linhaDoCerebro) + (linhaDoCerebro === 0 ? larguraDaRaquete / 2 : -larguraDaRaquete / 2), raquete, cores.cerebro);
+    desenharRaquete(px(linhaDoAdversario) + (linhaDoAdversario === 1 ? -larguraDaRaquete / 2 : larguraDaRaquete / 2), adversario, cores.algoritmo);
+
+    // o comando do cérebro agora (alça de subir − alça de descer): seta ao lado da raquete
+    const ultima = ultimaAmostra();
+    if (ultima) {
+      const comando = Math.max(-1, Math.min(1, ultima[2 + ACOES[0]] - ultima[2 + ACOES[1]]));
+      if (Math.abs(comando) > 0.1) {
+        const x = px(linhaDoCerebro) + larguraDaRaquete + 16;
+        const y = py(raquete);
+        const d = comando > 0 ? -1 : 1;
+        ctx.globalAlpha = 0.35 + 0.65 * Math.abs(comando);
+        ctx.fillStyle = comando > 0 ? coresDosCanais[ACOES[0]] : coresDosCanais[ACOES[1]];
+        ctx.beginPath();
+        ctx.moveTo(x, y + d * (4 + 12 * Math.abs(comando)));
+        ctx.lineTo(x - 7, y + d * 2);
+        ctx.lineTo(x + 7, y + d * 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // bola e rastro
+    for (let k = 0; k < rastro.length; k += 3) {
+      const idade = (tempo - rastro[k]) / RASTRO;
+      ctx.globalAlpha = 0.35 * (1 - idade);
+      ctx.fillStyle = cores.texto;
+      ctx.beginPath();
+      ctx.arc(px(Math.min(1, Math.max(0, rastro[k + 1]))), py(rastro[k + 2]), 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(px(Math.min(1, Math.max(0, bolaX))), py(bolaY), Math.max(4, A * 0.013), 0, 2 * Math.PI);
+    ctx.fill();
+
+    // a velocidade da bola agora (ela acelera a cada rebatida e volta ao normal no saque)
+    ctx.fillStyle = cores.suave;
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(`bola: ${decimal(quadro.posicoes.travessia / 1000, 2)} s por travessia`, esquerda + 8, topo + A - 8);
+    if (pausado) {
+      ctx.textAlign = "center";
+      ctx.font = "600 14px system-ui, sans-serif";
+      ctx.fillText("pausado", px(0.5), topo + A - 8);
+    }
+  }
+
+  function desenharRaster() {
+    const { ctx, largura, altura } = preparar($("raster"));
+    if (!estrutura) return;
+    const n = estrutura.nExc + estrutura.nInib;
+    const esquerda = 92;
+    const larguraUtil = largura - esquerda - 4;
+    const linhaDeNeuronio = altura / n;
+    // faixas dos canais e rótulos
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    estrutura.canais.forEach(([de, ate], k) => {
+      ctx.fillStyle = coresDosCanais[k];
+      ctx.globalAlpha = 0.07;
+      ctx.fillRect(esquerda, de * linhaDeNeuronio, larguraUtil, (ate - de + 1) * linhaDeNeuronio);
+      ctx.globalAlpha = 1;
+      ctx.fillText(nomesDosCanais[k], esquerda - 6, ((de + ate + 1) / 2) * linhaDeNeuronio);
+    });
+    ctx.fillStyle = cores.suave;
+    const fimDosCanais = estrutura.canais.at(-1)[1] + 1;
+    ctx.fillText("outros E", esquerda - 6, ((fimDosCanais + estrutura.nExc) / 2) * linhaDeNeuronio);
+    ctx.fillStyle = cores.inib;
+    ctx.fillText("I", esquerda - 6, ((estrutura.nExc + n) / 2) * linhaDeNeuronio);
+    const tamanho = Math.max(1.5, Math.min(3, linhaDeNeuronio));
+    for (let k = 0; k < spikes.length; k += 2) {
+      const i = spikes[k];
+      const x = esquerda + ((spikes[k + 1] - (tempo - JANELA_RASTER)) / JANELA_RASTER) * larguraUtil;
+      ctx.fillStyle = corDoNeuronio[i];
+      ctx.fillRect(x, i * linhaDeNeuronio, tamanho, tamanho);
+    }
+  }
+
+  // Linhas de amostras nos últimos 10 s: campos = índices na amostra, cada um com a sua cor
+  function desenharSinais(canvas, campos, coresDasLinhas, { minimo, maximo, referencias = [], depois = null }) {
+    const { ctx, largura, altura } = preparar(canvas);
+    const esquerda = 34;
+    const larguraUtil = largura - esquerda - 4;
+    const x = (t) => esquerda + ((t - (tempo - JANELA_SINAIS)) / JANELA_SINAIS) * larguraUtil;
+    const y = (v) => 6 + (1 - (v - minimo) / (maximo - minimo)) * (altura - 12);
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (const { valor, tracejada, rotulo } of referencias) {
+      ctx.strokeStyle = cores.borda;
+      ctx.setLineDash(tracejada ? [4, 4] : []);
+      ctx.beginPath();
+      ctx.moveTo(esquerda, y(valor));
+      ctx.lineTo(largura - 4, y(valor));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = cores.suave;
+      ctx.fillText(rotulo ?? decimal(valor, 1), esquerda - 4, y(valor));
+    }
+    campos.forEach((campo, c) => {
+      ctx.strokeStyle = coresDasLinhas[c];
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let k = 0; k < amostras.length; k += CAMPOS_DA_AMOSTRA) {
+        const px = x(amostras[k]);
+        const py = y(Math.min(maximo, Math.max(minimo, amostras[k + campo])));
+        if (k === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    });
+    if (depois) depois(ctx, x, y);
+  }
+
+  function desenharAlcas() {
+    desenharSinais($("alcas"), ACOES.map((k) => 2 + k), ACOES.map((k) => coresDosCanais[k]), {
+      minimo: 0,
+      maximo: 1,
+      referencias: [{ valor: 0 }, { valor: 0.5, tracejada: true }, { valor: 1 }],
+    });
+  }
+
+  function desenharDopamina() {
+    let maior = 0.5;
+    for (let k = 1; k < amostras.length; k += CAMPOS_DA_AMOSTRA) maior = Math.max(maior, Math.abs(amostras[k]));
+    desenharSinais($("dopamina"), [1], [cores.da], {
+      minimo: -maior,
+      maximo: maior,
+      referencias: [{ valor: 0 }, { valor: maior, tracejada: true }, { valor: -maior, tracejada: true }],
+      depois: (ctx, x, y) => {
+        ctx.textAlign = "center";
+        ctx.font = "12px system-ui, sans-serif";
+        for (const e of eventos) {
+          const marca = { rebatida: ["▲", cores.ok, maior], erro: ["▼", cores.erro, -maior], ponto: ["●", cores.algoritmo, maior] }[e.tipo];
+          if (!marca) continue;
+          ctx.fillStyle = marca[1];
+          ctx.textBaseline = marca[2] > 0 ? "top" : "bottom";
+          ctx.fillText(marca[0], x(e.t), y(marca[2]));
+        }
+      },
+    });
+  }
+
+  function desenharAprendizado() {
+    const { ctx, largura, altura } = preparar($("aprendizado"));
+    if (!quadro) return;
+    const esquerda = 38;
+    const baixo = 18;
+    const larguraUtil = largura - esquerda - 8;
+    const alturaUtil = altura - baixo - 6;
+    const curva = quadro.curva;
+    const blocos = Math.max(10, curva.length);
+    const x = (k) => esquerda + (k / blocos) * larguraUtil;
+    const y = (v) => 6 + (1 - v) * alturaUtil;
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    for (const v of [0, 0.5, 1]) {
+      ctx.strokeStyle = cores.borda;
+      ctx.beginPath();
+      ctx.moveTo(esquerda, y(v));
+      ctx.lineTo(largura - 8, y(v));
+      ctx.stroke();
+      ctx.fillStyle = cores.suave;
+      ctx.fillText(porcento(v), esquerda - 4, y(v));
+    }
+    ctx.strokeStyle = cores.suave;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(esquerda, y(estrutura.acaso));
+    ctx.lineTo(largura - 8, y(estrutura.acaso));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${quadro.jogadas} jogadas`, esquerda + larguraUtil / 2, altura - baixo + 4);
+    if (curva.length === 0) {
+      ctx.fillText("a primeira marca sai com 20 jogadas", esquerda + larguraUtil / 2, y(0.6));
+      return;
+    }
+    ctx.strokeStyle = cores.cerebro;
+    ctx.fillStyle = cores.cerebro;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    curva.forEach((v, k) => (k === 0 ? ctx.moveTo(x(k + 1), y(v)) : ctx.lineTo(x(k + 1), y(v))));
+    ctx.stroke();
+    curva.forEach((v, k) => {
+      ctx.beginPath();
+      ctx.arc(x(k + 1), y(v), 2.5, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
+
+  function desenharPesos() {
+    const { ctx, largura, altura } = preparar($("pesos"));
+    if (!quadro) return;
+    const esquerda = 74;
+    const topo = 30;
+    const largo = Math.min(140, (largura - esquerda - 8) / ENTRADAS.length);
+    const alto = Math.min(48, (altura - topo - 4) / ACOES.length);
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ENTRADAS.forEach((canal, i) => {
+      ctx.textAlign = "center";
+      ctx.fillStyle = coresDosCanais[canal];
+      // numa coluna estreita, o nome quebra em duas linhas ("bola" e o resto)
+      const nome = nomesDosCanais[canal];
+      const x = esquerda + (i + 0.5) * largo;
+      if (ctx.measureText(nome).width > largo - 6 && nome.includes(" ")) {
+        const [primeira, ...resto] = nome.split(" ");
+        ctx.fillText(primeira, x, topo / 2 - 7);
+        ctx.fillText(resto.join(" "), x, topo / 2 + 7);
+      } else ctx.fillText(nome, x, topo / 2);
+    });
+    ACOES.forEach((acao, j) => {
+      ctx.textAlign = "right";
+      ctx.fillStyle = coresDosCanais[acao];
+      ctx.fillText(nomesDosCanais[acao], esquerda - 6, topo + (j + 0.5) * alto);
+      ENTRADAS.forEach((canal, i) => {
+        const w = quadro.pesos[acao][canal];
+        const forca = Math.min(1, w / PESO_MAXIMO);
+        ctx.fillStyle = `rgba(76, 194, 255, ${0.08 + 0.85 * forca})`;
+        ctx.fillRect(esquerda + i * largo + 1, topo + j * alto + 1, largo - 2, alto - 2);
+        if ((mapaCerto[nomesDosCanais[acao]] ?? []).includes(nomesDosCanais[canal])) {
+          ctx.strokeStyle = cores.ok;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(esquerda + i * largo + 2, topo + j * alto + 2, largo - 4, alto - 4);
+        }
+        ctx.textAlign = "center";
+        ctx.fillStyle = forca > 0.55 ? "#0d1117" : cores.texto;
+        ctx.fillText(decimal(w, 2), esquerda + (i + 0.5) * largo, topo + (j + 0.5) * alto);
+      });
+    });
+  }
+
+  function desenhar() {
+    if (estrutura) {
+      desenharCampo();
+      desenharRaster();
+      desenharAlcas();
+      desenharDopamina();
+      desenharAprendizado();
+      desenharPesos();
+    }
+    requestAnimationFrame(desenhar);
+  }
+  requestAnimationFrame(desenhar);
+</script>
+</body>
+</html>
