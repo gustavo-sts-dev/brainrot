@@ -1,0 +1,53 @@
+
+Pong contra o v1: devolução (rebatidas / bolas que chegaram ao cérebro) por bloco de 5 min de vigília, média ± desvio entre sementes
+
+  com dopamina: sementes 1, 2, 3, 4, 5 · 1746 bolas por semente · 53 de 72 min acordado · 1513 s de relógio · córtex 6.5 Hz acordado
+      bloco 1                                    40% ± 8%   (53% 34% 32% 36% 45%)
+      bloco 2                                    41% ± 5%   (34% 44% 36% 49% 43%)
+      bloco 3                                    43% ± 4%   (41% 49% 46% 36% 44%)
+      bloco 4                                    59% ± 24%   (41% 91% 39% 38% 85%)
+      bloco 5                                    66% ± 23%   (39% 96% 49% 56% 91%)
+      bloco 6                                    76% ± 20%   (45% 93% 61% 92% 92%)
+      bloco 7                                    92% ± 2%   (92% 94% 94% 91% 89%)
+      bloco 8                                    94% ± 2%   (93% 97% 94% 91% 96%)
+      bloco 9                                    93% ± 2%   (92% 90% 97% 92% 92%)
+      bloco 10                                   93% ± 2%   (96% 94% 93% 92% 91%)
+      último bloco                               93% ± 2%   (96% 94% 93% 92% 91%)
+      antes → depois de cada sono                38%→40%, 41%→89%, 94%→94% · 48%→89%, 95%→93%, 95%→92% · 43%→46%, 47%→89%, 96%→95% · 38%→35%, 86%→89%, 91%→93% · 47%→92%, 91%→89%, 92%→91%
+      placar cérebro × v1                        0×605 0×367 0×577 0×532 0×375
+      maior sequência sem errar                  47 73 46 45 52
+      saúde do córtex                            ok em todas
+  pesos córtex → estriado, média das sementes (ação 4 = subir, 5 = descer) (linha: ação; coluna: canal do córtex 0 1 2 3 4 5), começo → fim
+      ação 4                                      0.64 0.64 0.72 0.72 0.00 0.00   →   1.23 0.02 0.87 0.53 0.00 0.00
+      ação 5                                      0.64 0.62 0.67 0.73 0.00 0.00   →   0.04 1.25 0.52 0.92 0.00 0.00
+
+  sem dopamina: sementes 1, 2, 3, 4, 5 · 1640 bolas por semente · 53 de 72 min acordado · 1526 s de relógio · córtex 6.5 Hz acordado
+      bloco 1                                    57% ± 11%   (76% 55% 57% 55% 42%)
+      bloco 2                                    66% ± 10%   (83% 59% 60% 71% 55%)
+      bloco 3                                    64% ± 12%   (83% 65% 63% 63% 46%)
+      bloco 4                                    64% ± 12%   (83% 64% 58% 69% 47%)
+      bloco 5                                    62% ± 12%   (76% 65% 55% 71% 43%)
+      bloco 6                                    65% ± 9%   (73% 68% 65% 72% 48%)
+      bloco 7                                    65% ± 10%   (79% 72% 60% 62% 52%)
+      bloco 8                                    64% ± 13%   (86% 68% 54% 62% 48%)
+      bloco 9                                    63% ± 11%   (82% 60% 62% 64% 46%)
+      bloco 10                                   64% ± 8%   (79% 66% 62% 58% 56%)
+      último bloco                               64% ± 8%   (79% 66% 62% 58% 56%)
+      antes → depois de cada sono                82%→83%, 73%→80%, 84%→80% · 61%→62%, 67%→69%, 65%→61% · 57%→60%, 57%→63%, 58%→58% · 64%→68%, 72%→65%, 62%→63% · 46%→48%, 47%→52%, 47%→55%
+      placar cérebro × v1                        0×334 0×590 0×642 0×573 0×844
+      maior sequência sem errar                  31 22 14 24 10
+      saúde do córtex                            ok em todas
+  pesos córtex → estriado, média das sementes (ação 4 = subir, 5 = descer) (linha: ação; coluna: canal do córtex 0 1 2 3 4 5), começo → fim
+      ação 4                                      0.64 0.64 0.72 0.72 0.00 0.00   →   0.64 0.64 0.72 0.72 0.00 0.00
+      ação 5                                      0.64 0.62 0.67 0.73 0.00 0.00   →   0.64 0.62 0.67 0.73 0.00 0.00
+
+  referências na mesma física, 53 min de jogo, as mesmas sementes:
+      raquete parada                             35% ± 1% · placar 0×1091 0×1090 0×1118 0×1098 0×1100
+      raquete ao acaso                           46% ± 1% · placar 0×868 0×907 0×874 0×912 0×897
+      raquete seguidor                           100% ± 0% · placar 35×0 35×0 35×0 35×0 35×0
+      agente de Q-learning do Manus              último bloco 76% ± 4% · placar 0×479 0×544 0×459 0×501 0×470
+
+  critério fixado antes de rodar (proximospassos/roteiro.md):
+      (a) último bloco ≥ 85% em todas            passou
+      (b) com dopamina > sem, semente a semente  passou
+      (c) depois − antes do sono ≥ −10 pontos    12 pontos: passou

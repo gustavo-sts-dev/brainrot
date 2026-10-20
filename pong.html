@@ -115,8 +115,8 @@
 </head>
 <body>
 <header>
-  <h1>Pong: <span class="cerebro">cérebro</span> × <span class="algoritmo">algoritmo</span></h1>
-  <span class="status">t = <b id="tempo">0,0 s</b></span>
+  <h1>Pong: <span class="cerebro">cérebro</span> × <span class="algoritmo">v1 do Manus</span></h1>
+  <span class="status">t = <b id="tempo">0,0 s</b> · <b id="sono">–</b></span>
   <span class="status">rebatidas do cérebro: <b id="ultimas">–</b> nas últimas 50 · <b id="total">–</b> no total</span>
   <span class="status" id="treino">–</span>
   <span class="status" id="conexao">conectando…</span>
@@ -126,12 +126,12 @@
   <section class="painel campo">
     <h2>Campo</h2>
     <p>
-      À esquerda, o <span class="cerebro">cérebro</span>: o que ele sente da bola chega ao córtex em spikes, os núcleos da base escolhem
+      À esquerda, o <span class="cerebro">cérebro</span> inteiro: o que ele sente da bola chega ao córtex em spikes, os núcleos da base escolhem
       <span class="subir">subir</span> ou <span class="descer">descer</span> (a raquete anda na proporção de quanto cada alça abriu),
-      e a dopamina da VTA só vem quando ele rebate (errar não pune).
-      <span id="sobreOAdversario">À direita, um <span class="algoritmo">algoritmo</span>: o seguidor persegue a altura da bola, o previsor calcula onde ela vai chegar,
-      e o excelente também mira com a ponta da raquete para longe do cérebro. A bola sai mais inclinada quanto mais longe do centro da raquete bate,
-      e acelera a cada rebatida.</span>
+      e a dopamina da VTA só vem quando ele rebate (errar não pune). Ele dorme cerca de 6 min a cada 20, e o jogo espera.
+      À direita, o <span class="algoritmo">v1 do Manus</span>: mira parte do caminho da bola e anda a até 3,4/s.
+      A física é a do Pong do Manus, com raquetes de 20% da altura (lá, 40%): a bola ganha efeito pelo ponto de contato e acelera 1% por rebatida,
+      até o v1 não alcançar mais.
     </p>
     <canvas id="campo"></canvas>
   </section>
@@ -162,7 +162,7 @@
 
   <section class="painel">
     <h2>Aprendizado</h2>
-    <p>Fração de rebatidas do cérebro a cada 20 jogadas. A linha tracejada é a raquete com ações ao acaso (~22%).</p>
+    <p>Fração de rebatidas do cérebro a cada 20 jogadas. A linha tracejada é a raquete com ações ao acaso (<span id="acaso">–</span>).</p>
     <canvas id="aprendizado"></canvas>
   </section>
 
@@ -186,18 +186,6 @@
     </select>
   </label>
   <span class="separador"></span>
-  <span id="controlesDoAdversario" style="display: contents">
-  <label><span class="algoritmo">Algoritmo:</span>
-    <select id="tipoAdversario">
-      <option value="seguidor">seguidor</option>
-      <option value="previsor">previsor</option>
-      <option value="excelente">excelente</option>
-    </select>
-  </label>
-  <label>velocidade <input type="range" id="velocidadeAdversario" min="0.05" max="1.2" step="0.05"> <output id="velocidadeAdversarioValor"></output></label>
-  <label>reação <input type="range" id="reacao" min="0" max="800" step="50"> <output id="reacaoValor"></output></label>
-  <label title="o quanto o previsor e o excelente erram ao ler onde a bola vai chegar (0 = perfeito e imbatível)">erro de leitura <input type="range" id="erroAdversario" min="0" max="0.8" step="0.05"> <output id="erroAdversarioValor"></output></label>
-  </span>
   <button id="zerarPlacar">Zerar placar</button>
   <span class="separador"></span>
   <label>Semente <input type="number" id="semente" min="1" step="1" value="1"></label>
@@ -291,12 +279,7 @@
     CAMPOS_DA_AMOSTRA = 2 + 2 * nomesDosCanais.length;
     $("legendaDosCanais").innerHTML =
       "canais " + nomesDosCanais.map((nome, k) => `<span style="color: ${coresDosCanais[k]}">${nome}</span>`).join(", ");
-    const doManus = estrutura.fisica === "manus";
-    $("controlesDoAdversario").style.display = doManus ? "none" : "contents";
-    if (doManus) {
-      $("sobreOAdversario").textContent =
-        "À direita, o v1 do Manus: mira parte do caminho da bola e anda a até 3,4/s. A física é a do Pong do Manus: raquetes de 40% da altura, bola que acelera 1% por rebatida e ganha efeito pelo ponto de contato.";
-    }
+    $("acaso").textContent = `~${porcento(estrutura.acaso)}`;
     const n = estrutura.nExc + estrutura.nInib;
     corDoNeuronio = Array.from({ length: n }, (_, i) => {
       if (i >= estrutura.nExc) return cores.inib;
@@ -341,36 +324,12 @@
     const minutos = Math.round((estrutura.experienciaAnterior + tempo / 1000) / 60);
     const salvo = estrutura.arquivo ? ` · salvo em ${estrutura.arquivo.split(/[\\/]/).pop()}` : "";
     $("treino").textContent = `${estrutura.comDopamina ? "aprendendo (com dopamina)" : "sem dopamina: não aprende"} · ${minutos} min de jogo${salvo}`;
-    sincronizarAdversario(quadro.adversario);
+    // o estado do hipotálamo: 0 acordado, 1 sono NREM, 2 sono REM
+    $("sono").textContent = ["acordado", "dormindo (NREM)", "dormindo (REM)"][quadro.estado] ?? "–";
   });
 
   // --- Controles -----------------------------------------------------------------
 
-  let mexendoNoAdversario = false;
-  function sincronizarAdversario({ tipo, velocidade, reacao, erro = 0 }) {
-    if (mexendoNoAdversario) return;
-    if (document.activeElement !== $("tipoAdversario")) $("tipoAdversario").value = tipo;
-    $("velocidadeAdversario").value = velocidade;
-    $("velocidadeAdversarioValor").textContent = `${decimal(velocidade, 2)} /s`;
-    $("reacao").value = reacao;
-    $("reacaoValor").textContent = `${reacao} ms`;
-    $("erroAdversario").value = erro;
-    $("erroAdversarioValor").textContent = decimal(erro, 2);
-  }
-  for (const id of ["velocidadeAdversario", "reacao", "erroAdversario"]) {
-    $(id).onpointerdown = () => (mexendoNoAdversario = true);
-    $(id).onpointerup = () => (mexendoNoAdversario = false);
-    $(id).oninput = () => {
-      const velocidade = Number($("velocidadeAdversario").value);
-      const reacao = Number($("reacao").value);
-      const erro = Number($("erroAdversario").value);
-      $("velocidadeAdversarioValor").textContent = `${decimal(velocidade, 2)} /s`;
-      $("reacaoValor").textContent = `${reacao} ms`;
-      $("erroAdversarioValor").textContent = decimal(erro, 2);
-      enviarControle({ adversario: { velocidade, reacao, erro } });
-    };
-  }
-  $("tipoAdversario").onchange = (e) => enviarControle({ adversario: { tipo: e.target.value } });
   $("pausar").onclick = () => enviarControle({ pausado: !pausado });
   $("velocidade").onchange = (e) => enviarControle({ velocidade: Number(e.target.value) });
   $("zerarPlacar").onclick = () => enviarControle({ zerarPlacar: true });
@@ -435,7 +394,7 @@
     ctx.fillStyle = cores.suave;
     const altoDoPlacar = topo + 14 + Math.max(28, A * 0.12);
     ctx.fillText("cérebro", px(0.38), altoDoPlacar);
-    ctx.fillText(estrutura.fisica === "manus" ? "v1 do Manus" : "algoritmo", px(0.62), altoDoPlacar);
+    ctx.fillText("v1 do Manus", px(0.62), altoDoPlacar);
 
     // brilhos dos eventos recentes (em tempo real)
     for (const e of eventos) {
@@ -455,7 +414,7 @@
     }
 
     // raquetes
-    const larguraDaRaquete = Math.max(6, L * 0.014);
+    const larguraDaRaquete = Math.max(4, L * 0.014);
     const desenharRaquete = (x, y, corDaRaquete) => {
       ctx.fillStyle = corDaRaquete;
       ctx.fillRect(x - larguraDaRaquete / 2, py(Math.min(1, y + meiaRaquete)), larguraDaRaquete, py(Math.max(0, y - meiaRaquete)) - py(Math.min(1, y + meiaRaquete)));
@@ -509,6 +468,21 @@
       ctx.textAlign = "center";
       ctx.font = "600 14px system-ui, sans-serif";
       ctx.fillText("pausado", px(0.5), topo + A - 8);
+    }
+    // enquanto o cérebro dorme, o jogo espera
+    if (quadro.posicoes.dormindo) {
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = cores.campo;
+      ctx.fillRect(esquerda, topo, L, A);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = cores.texto;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "600 16px system-ui, sans-serif";
+      ctx.fillText("o cérebro está dormindo", px(0.5), py(0.5) - 10);
+      ctx.fillStyle = cores.suave;
+      ctx.font = "13px system-ui, sans-serif";
+      ctx.fillText("o jogo continua quando ele acordar", px(0.5), py(0.5) + 12);
     }
   }
 
