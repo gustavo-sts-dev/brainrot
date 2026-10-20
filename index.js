@@ -4855,8 +4855,9 @@ function criarAmbiente(semente, { tarefa = "pistas", acaoCerta = 3 } = {}) {
 // 1000/60 ms; aqui, de 1 ms.
 //   v1: mira y + (vy/|vx|)·d·0,55, com d a distância da bola até a linha do cérebro (lá, a do
 //       agente), e anda clip(alvo − v1, ±1)·3,4 por s.
-//   cérebro: a velocidade vai para (alça de subir − alça de descer)·3,4 por s com τ = 70 ms (como
-//       a do agente de lá). Recompensa só na rebatida, sem punição (lá: −0,5 por bola perdida).
+//   cérebro: a velocidade vai para clip(Σ alça de cada ação × nível dela, ±1)·3,4 por s com τ = 70 ms
+//       (como a do agente de lá); com as duas ações de cerebroNoPong, (alça de subir − alça de
+//       descer)·3,4. Recompensa só na rebatida, sem punição (lá: −0,5 por bola perdida).
 // jogada vale 1 nos primeiros 100 ms de cada bola que vem para o cérebro (a pista J da VTA).
 // Sono: quando o hipotálamo passa 1 s seguido dormindo (a mesma regra das transições de
 // rodarIntegrado), o jogo para: a bola fica onde está, os sensores vão a 0 e nada é recompensado, e o
@@ -4879,15 +4880,31 @@ const fisicaDoPong = {
 //          (até vyDeReferencia) e da distância que falta (1 na linha do v1, 0 na do cérebro).
 // A direção e a distância são o que o agente de Q-learning do Manus recebia no estado; aqui elas
 // chegam ao córtex como entrada sensorial, e o que fazer com elas o estriado aprende. Só com 0 e 1,
-// o cérebro só perseguia a bola. orcamento: ver criarNucleosDaBase.
+// o cérebro só perseguia a bola. orcamento: ver criarNucleosDaBase. niveis: a velocidade de cada
+// ação, em frações da máxima (ver criarPong).
 const cerebroNoPong = {
   canais: canaisDoPong,
   entradas: [0, 1, 2, 3],
   acoes: [4, 5],
+  niveis: [1, -1],
   nomes: ["bola acima", "bola abaixo", "bola subindo", "bola descendo", "subir", "descer"],
   orcamento: "por entrada",
   alcanceDoSensor: 0.25,
   vyDeReferencia: 1, // por s, o |vy| que faz os sensores de direção chegarem a 1
+};
+
+// Com --velocidades: os mesmos sentidos, e 11 ações em vez de 2: subir na velocidade 5 a 1, parar (0)
+// e descer na velocidade 1 a 5, cada nível 1/5 da máxima. Os núcleos da base escolhem entre elas. Os
+// canais dos sentidos são os mesmos (os excitatórios 0 a 63); os das ações têm 3 excitatórios cada
+// (64 a 96), porque 11 canais de 16 não cabem nos 100. Os canais das ações não chegam ao estriado,
+// então o tamanho deles só muda o quanto a alça excita o córtex.
+const niveisDasVelocidades = [5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5];
+const cerebroComVelocidades = {
+  ...cerebroNoPong,
+  canais: [...canaisDoPong.slice(0, 4), ...niveisDasVelocidades.map((_, k) => Array.from({ length: 3 }, (_, i) => 64 + 3 * k + i))],
+  acoes: niveisDasVelocidades.map((_, k) => 4 + k),
+  niveis: niveisDasVelocidades.map((n) => n / 5),
+  nomes: [...cerebroNoPong.nomes.slice(0, 4), ...niveisDasVelocidades.map((n) => (n > 0 ? `subir ${n}` : n < 0 ? `descer ${-n}` : "parar"))],
 };
 
 // Os sensores do Pong: relativa = altura da bola − centro da raquete; vindo: a bola vem para o
@@ -4901,10 +4918,11 @@ function sentirOPong(saidas, { relativa, vindo, distancia, vy }) {
   saidas.sensor3 = vy < 0 ? movimento : 0;
 }
 
-function criarPong(semente, { f = fisicaDoPong } = {}) {
+// cerebro: cerebroNoPong ou cerebroComVelocidades
+function criarPong(semente, { f = fisicaDoPong, cerebro = cerebroNoPong } = {}) {
   const sortear = mulberry32(semente * 7919 + 29);
-  const [sobeNa, desceNa] = cerebroNoPong.acoes.map((k) => `alca${k}`);
-  const sensores = Object.fromEntries(cerebroNoPong.entradas.map((k) => [`sensor${k}`, 0]));
+  const motor = cerebro.acoes.map((k, i) => [`alca${k}`, cerebro.niveis[i]]);
+  const sensores = Object.fromEntries(cerebro.entradas.map((k) => [`sensor${k}`, 0]));
   const limitar = (x, a, b) => Math.max(a, Math.min(b, x));
   const bola = { x: 0.5, y: 0.5, vx: -f.vxDoSaque, vy: 0.28 }; // por s; o primeiro saque vai para o cérebro
   let raquete = 0.5;
@@ -4926,7 +4944,7 @@ function criarPong(semente, { f = fisicaDoPong } = {}) {
     nome: "ambiente",
     nivel: "populacao",
     ligada: true,
-    entradas: { estado: 0, ...Object.fromEntries(cerebroNoPong.canais.map((_, k) => [`alca${k}`, 0])) },
+    entradas: { estado: 0, ...Object.fromEntries(cerebro.canais.map((_, k) => [`alca${k}`, 0])) },
     saidas: { pista: -1, recompensa: 0, jogada: 0, ...sensores },
     padrao: { pista: -1, recompensa: 0, jogada: 0, ...sensores },
     diario: [], // { t, tipo: "jogada" | "rebatida" | "erro" | "ponto" (o v1 errou) | "dormiu" | "acordou" }
@@ -4957,7 +4975,9 @@ function criarPong(semente, { f = fisicaDoPong } = {}) {
       const alvo = limitar(bola.y + (bola.vy / Math.abs(bola.vx)) * d * f.previsaoDoV1, f.centro[0], f.centro[1]);
       v1 = limitar(v1 + limitar(alvo - v1, -1, 1) * f.velocidade * s, f.centro[0], f.centro[1]);
       // o cérebro
-      const comando = Math.max(-1, Math.min(1, entradas[sobeNa] - entradas[desceNa]));
+      let soma = 0;
+      for (const [alca, nivel] of motor) soma += entradas[alca] * nivel;
+      const comando = Math.max(-1, Math.min(1, soma));
       velocidade += (comando * f.velocidade - velocidade) * (1 - Math.exp(-dt / f.tauDaRaquete));
       raquete = limitar(raquete + velocidade * s, f.centro[0], f.centro[1]);
       if (raquete === f.centro[0] || raquete === f.centro[1]) velocidade = 0;
@@ -5634,12 +5654,13 @@ const ordemDasRegioes = ["cortex", "hipotalamo", "prosencefaloBasal", "locusCoer
 
 // tarefa: "pistas" (A, B ou C e a recompensa depois de B), "escolha" (a recompensa só vem se a
 // resposta depois de B foi a certa) ou "pong" (contra o v1; ver criarPong e cerebroNoPong).
-// comDopamina: false tira a dopamina dos núcleos da base.
-function montarIntegrado(ligadas, { semente = 1, perfil = "roedor", nivelCortex = "spikes", noSono = [], tarefa = "pistas", comDopamina = true } = {}) {
+// comDopamina: false tira a dopamina dos núcleos da base. velocidades: no Pong, as 11 ações de
+// cerebroComVelocidades no lugar de subir e descer.
+function montarIntegrado(ligadas, { semente = 1, perfil = "roedor", nivelCortex = "spikes", noSono = [], tarefa = "pistas", comDopamina = true, velocidades = false } = {}) {
   semear(semente);
-  const pong = tarefa === "pong" ? cerebroNoPong : null;
+  const pong = tarefa === "pong" ? (velocidades ? cerebroComVelocidades : cerebroNoPong) : null;
   const regioes = {
-    ambiente: pong ? criarPong(semente) : criarAmbiente(semente, { tarefa }),
+    ambiente: pong ? criarPong(semente, { cerebro: pong }) : criarAmbiente(semente, { tarefa }),
     cortex: criarCortex({ nivel: nivelCortex, noSono, ...(pong ? { canais: pong.canais } : {}) }),
     hipotalamo: criarHipotalamo({ semente }),
     prosencefaloBasal: criarProsencefaloBasal(),
@@ -5973,10 +5994,16 @@ function imprimirPesosDaBase({ inicio, fim }, rotulo = "pesos córtex → estria
 // sono não entram), com córtex, prosencéfalo basal, locus coeruleus, VTA e núcleos da base. Pong: o
 // cérebro inteiro, as seis regiões, com o sono (o jogo para enquanto o cérebro dorme; ver criarPong).
 // Condições: com dopamina e sem dopamina nos núcleos da base (o controle; λ fica em 0,2 e W não
-// muda); no Pong, também sem sono (com dopamina e o hipotálamo desligado, sempre acordado). Cada
-// simulação grava um resumo em resultados/integrado/<experimento>/, e --analisar refaz o resumo de
-// todas as que estão lá, então as sementes podem rodar em processos separados.
-const condicoesDoAprendizado = { "com dopamina": { comDopamina: true }, "sem dopamina": { comDopamina: false }, "sem sono": { comDopamina: true, semSono: true } };
+// muda); no Pong, também sem sono (com dopamina e o hipotálamo desligado, sempre acordado) e com
+// velocidades (com dopamina e as 11 ações de cerebroComVelocidades). Cada simulação grava um resumo
+// em resultados/integrado/<experimento>/, e --analisar refaz o resumo de todas as que estão lá, então
+// as sementes podem rodar em processos separados.
+const condicoesDoAprendizado = {
+  "com dopamina": { comDopamina: true },
+  "sem dopamina": { comDopamina: false },
+  "sem sono": { comDopamina: true, semSono: true },
+  "com velocidades": { comDopamina: true, velocidades: true },
+};
 const ligadasNoAprendizado = ["cortex", "prosencefaloBasal", "locusCoeruleus", "vta", "nucleosDaBase"];
 const ligadasNoPong = ordemDasRegioes;
 
@@ -6092,6 +6119,9 @@ function pongSemCerebro(politica, semente, segundos) {
 //       sem sono em pelo menos 4 de 5 sementes. Entrou depois da raquete de 40%, em que o salto de
 //       ~45% para ~90% atravessou um sono nas 5 sementes;
 //   (e) melhor que o agente do Manus: a média da devolução no último bloco é maior que a dele.
+// Com as 11 velocidades (a condição com velocidades, rodada depois e comparada com a com dopamina):
+//   (f) aprende a escolher a velocidade: devolução ≥ 80% no último bloco em todas as sementes;
+//   (g) não piora: a média do último bloco fica a no máximo 5 pontos abaixo da com dopamina.
 // Ao lado, na mesma física e com a mesma vigília: a raquete parada, ao acaso, o seguidor e o agente
 // de Q-learning do Manus (ver jogarComoOAgenteDoManus).
 function imprimirPong(resumos, sementes) {
@@ -6122,7 +6152,9 @@ function imprimirPong(resumos, sementes) {
     const problemas = lista.flatMap((r) => r.saude.map((p) => `semente ${r.semente}: ${p}`));
     linha("    saúde do córtex", problemas.length ? problemas.join("; ") : "ok em todas");
     const mediaDosPesos = (momento) => lista[0].pesosDaBase[momento].map((linhaW, j) => linhaW.map((_, i) => media(lista.map((r) => r.pesosDaBase[momento][j][i]))));
-    imprimirPesosDaBase({ inicio: mediaDosPesos("inicio"), fim: mediaDosPesos("fim") }, "pesos córtex → estriado, média das sementes (ação 4 = subir, 5 = descer)", cerebroNoPong.acoes);
+    const cerebro = condicoesDoAprendizado[condicao].velocidades ? cerebroComVelocidades : cerebroNoPong;
+    const nomesDasAcoes = cerebro.acoes.map((k) => `${k} = ${cerebro.nomes[k]}`).join(", ");
+    imprimirPesosDaBase({ inicio: mediaDosPesos("inicio"), fim: mediaDosPesos("fim") }, `pesos córtex → estriado, média das sementes (ação ${nomesDasAcoes})`, cerebro.acoes);
   }
 
   const referencia = porCondicao["com dopamina"] ?? Object.values(porCondicao)[0];
@@ -6167,6 +6199,12 @@ function imprimirPong(resumos, sementes) {
   const doCerebro = media(com.medidas.map((m) => m.ultimo));
   const doAgente = media(doManus.map((d) => d.ultimo));
   linha("    (e) último bloco > o do agente do Manus", `${porcento(doCerebro)} × ${porcento(doAgente)}: ${passou(doCerebro > doAgente)}`);
+  const comVelocidades = porCondicao["com velocidades"];
+  if (comVelocidades) {
+    const daVelocidade = media(comVelocidades.medidas.map((m) => m.ultimo));
+    linha("    (f) com velocidades, último bloco ≥ 80% em todas", passou(comVelocidades.medidas.every((m) => m.ultimo >= 0.8)));
+    linha("    (g) com velocidades ≥ com dopamina − 5 pontos", `${porcento(daVelocidade)} × ${porcento(doCerebro)}: ${passou(daVelocidade >= doCerebro - 0.05)}`);
+  }
 }
 
 // Acertos por quinto do treino da escolha: a fração das respostas depois de B que foram a ação 3
@@ -6426,21 +6464,23 @@ function servirVisualizacao(cerebroInicial, porta = Number(process.env.PORT ?? 3
 //                   máximo que der), zerarPlacar (o cérebro continua o mesmo), salvar e reiniciar
 //                   ({ semente, comDopamina })
 // Rode com: node index.js --pong [--treino=1800] [--carregar[=<arquivo>]] [--soTreinar] [--semente=1]
-//           [--semDopamina]
+//           [--semDopamina] [--velocidades]
 // Com --treino, o cérebro joga esse tempo (s simulados) antes de a página abrir, e o que ele aprendeu é
 // salvo em resultados/integrado/cerebros/ (ver salvarCerebro). --carregar começa de um cérebro salvo
 // (o da semente, ou o arquivo dado), e os dois juntos continuam o treino de um salvo. --soTreinar
-// treina, salva e sai, sem abrir a página. O botão "Salvar cérebro" salva o de agora.
+// treina, salva e sai, sem abrir a página. O botão "Salvar cérebro" salva o de agora. --velocidades
+// troca subir e descer pelas 11 ações de cerebroComVelocidades.
 // ============================================================================
 
 // O arquivo padrão do cérebro salvo de cada semente
-const arquivoDoCerebro = (semente, comDopamina = true) => join("resultados", "integrado", "cerebros", `pong-semente-${semente}${comDopamina ? "" : "-sem-dopamina"}.json.gz`);
+const arquivoDoCerebro = (semente, comDopamina = true, velocidades = false) =>
+  join("resultados", "integrado", "cerebros", `pong-semente-${semente}${comDopamina ? "" : "-sem-dopamina"}${velocidades ? "-velocidades" : ""}.json.gz`);
 // A versão dos arquivos de cérebro: a 4 é a do cérebro inteiro contra o v1 com a raquete de 20%; a 3
 // era a mesma com a de 40%, e as anteriores são de versões do Pong que saíram (outra física, outros
 // adversários, outros sentidos, sem o sono)
 const versaoDoCerebro = 4;
 
-function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = null, soTreinar = false, porta = Number(process.env.PORT ?? 3000) } = {}) {
+function servirPong({ semente = 1, comDopamina = true, velocidades = false, treino = 0, carregar = null, soTreinar = false, porta = Number(process.env.PORT ?? 3000) } = {}) {
   const quadrosPorSegundo = 30;
   const execucao = { pausado: false, velocidade: 1000 };
   const clientes = new Set();
@@ -6449,8 +6489,9 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
   // a devolução da raquete com ações ao acaso (10 min, sementes 1 a 5), a linha de referência da página
   const acaso = media([1, 2, 3, 4, 5].map((s) => pongSemCerebro("ao acaso", s, 600).devolucao));
 
+  const cerebroDoJogo = () => (velocidades ? cerebroComVelocidades : cerebroNoPong);
   const montar = () => {
-    const integrado = montarIntegrado(ligadasNoPong, { semente, comDopamina, tarefa: "pong", nivelCortex: "spikes" });
+    const integrado = montarIntegrado(ligadasNoPong, { semente, comDopamina, velocidades, tarefa: "pong", nivelCortex: "spikes" });
     const { ambiente, cortex, hipotalamo, nucleosDaBase, vta } = integrado.regioes;
     // resultados: 1 rebatida, 0 erro; curva: a fração de rebatidas a cada bloco de 20 jogadas;
     // experienciaAnterior: os s simulados que um cérebro carregado já tinha jogado
@@ -6461,13 +6502,14 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
   // O que o cérebro aprendeu (córtex, núcleos da base e VTA) e o histórico de rebatidas, num .json.gz.
   // Os estados rápidos (voltagens, condutâncias, traços) não vão: em poucos ms eles se refazem. O
   // hipotálamo também não: um cérebro carregado começa o dia acordado, de manhã.
-  const salvarCerebro = (arquivo = arquivoDoCerebro(semente, comDopamina)) => {
+  const salvarCerebro = (arquivo = arquivoDoCerebro(semente, comDopamina, velocidades)) => {
     mkdirSync(dirname(arquivo), { recursive: true });
     const { cortex, nucleosDaBase, vta } = jogo;
     const salvo = {
       versao: versaoDoCerebro,
       semente,
       comDopamina,
+      velocidades,
       experiencia: experiencia(),
       cortex: cortex.aprendido(),
       nucleosDaBase: nucleosDaBase.aprendido(),
@@ -6488,6 +6530,7 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
     }
     semente = salvo.semente;
     comDopamina = salvo.comDopamina;
+    velocidades = Boolean(salvo.velocidades);
     montar();
     jogo.cortex.carregar(salvo.cortex);
     jogo.nucleosDaBase.carregar(salvo.nucleosDaBase);
@@ -6501,7 +6544,7 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
   const andar = (ms, limite = Infinity, guardar = true) => {
     const inicio = performance.now();
     const { integrado, ambiente, cortex, nucleosDaBase, vta } = jogo;
-    const { canais } = cerebroNoPong;
+    const { canais } = cerebroDoJogo();
     let feitos = 0;
     while (feitos < ms && performance.now() - inicio < limite) {
       integrado.passo(1);
@@ -6529,10 +6572,11 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
   const estrutura = () => ({
     nExc: jogo.cortex.cerebro.config.nExc,
     nInib: jogo.cortex.cerebro.config.nInib,
-    canais: cerebroNoPong.canais.map((canal) => [canal[0], canal.at(-1)]),
-    nomesDosCanais: cerebroNoPong.nomes,
-    acoes: cerebroNoPong.acoes,
-    entradas: cerebroNoPong.entradas,
+    canais: cerebroDoJogo().canais.map((canal) => [canal[0], canal.at(-1)]),
+    nomesDosCanais: cerebroDoJogo().nomes,
+    acoes: cerebroDoJogo().acoes,
+    niveis: cerebroDoJogo().niveis,
+    entradas: cerebroDoJogo().entradas,
     semente,
     comDopamina,
     acaso,
@@ -6645,15 +6689,16 @@ function servirPong({ semente = 1, comDopamina = true, treino = 0, carregar = nu
       resposta.end();
     }
   }).listen(porta, () =>
-    console.log(`Pong ligado: o cérebro inteiro (semente ${semente}${comDopamina ? "" : ", sem dopamina"}) × o v1 do Manus. Visualização em http://localhost:${porta}`),
+    console.log(`Pong ligado: o cérebro inteiro (semente ${semente}${comDopamina ? "" : ", sem dopamina"}${velocidades ? ", 11 velocidades" : ""}) × o v1 do Manus. Visualização em http://localhost:${porta}`),
   );
 }
 
 function demonstracaoPong() {
   const semente = Number(lerArgumento("semente", 1));
   const comDopamina = !process.argv.includes("--semDopamina");
-  const carregar = lerArgumento("carregar", process.argv.includes("--carregar") ? arquivoDoCerebro(semente, comDopamina) : null);
-  servirPong({ semente, comDopamina, carregar, treino: Number(lerArgumento("treino", 0)), soTreinar: process.argv.includes("--soTreinar") });
+  const velocidades = process.argv.includes("--velocidades");
+  const carregar = lerArgumento("carregar", process.argv.includes("--carregar") ? arquivoDoCerebro(semente, comDopamina, velocidades) : null);
+  servirPong({ semente, comDopamina, velocidades, carregar, treino: Number(lerArgumento("treino", 0)), soTreinar: process.argv.includes("--soTreinar") });
 }
 
 // ============================================================================

@@ -126,8 +126,8 @@
   <section class="painel campo">
     <h2>Campo</h2>
     <p>
-      À esquerda, o <span class="cerebro">cérebro</span> inteiro: o que ele sente da bola chega ao córtex em spikes, os núcleos da base escolhem
-      <span class="subir">subir</span> ou <span class="descer">descer</span> (a raquete anda na proporção de quanto cada alça abriu),
+      À esquerda, o <span class="cerebro">cérebro</span> inteiro: o que ele sente da bola chega ao córtex em spikes, os núcleos da base <span id="sobreAsAcoes">escolhem
+      <span class="subir">subir</span> ou <span class="descer">descer</span> (a raquete anda na proporção de quanto cada alça abriu)</span>,
       e a dopamina da VTA só vem quando ele rebate (errar não pune). Ele dorme cerca de 6 min a cada 20, e o jogo espera.
       À direita, o <span class="algoritmo">v1 do Manus</span>: mira parte do caminho da bola e anda a até 3,4/s.
       A física é a do Pong do Manus, com raquetes de 20% da altura (lá, 40%): a bola ganha efeito pelo ponto de contato e acelera 1% por rebatida,
@@ -144,7 +144,7 @@
 
   <section class="painel">
     <h2>Núcleos da base</h2>
-    <p>
+    <p id="sobreAsAlcas">
       A alça de <span class="subir">subir</span> e a de <span class="descer">descer</span> (o quanto o GPi soltou cada uma), nos últimos 10 s.
       A raquete anda na proporção da diferença entre as duas.
     </p>
@@ -218,7 +218,9 @@
     subir: cor("--subir"),
     descer: cor("--descer"),
   };
-  // o mapa certo: cada ação e os canais sensoriais que deviam acioná-la
+  // com as 11 velocidades, "subir 3" e "descer 1" têm a cor de subir e de descer, e parar a do texto
+  const corDe = (nome) => corDoCanal[nome] ?? corDoCanal[nome.split(" ")[0]] ?? (nome === "parar" ? cores.texto : cores.suave);
+  // o mapa certo: cada ação e os canais sensoriais que deviam acioná-la (pela primeira palavra do nome)
   const mapaCerto = { subir: ["bola acima", "bola subindo"], descer: ["bola abaixo", "bola descendo"] };
   const JANELA_RASTER = 2000; // ms de simulação
   const JANELA_SINAIS = 10000;
@@ -230,6 +232,7 @@
   let nomesDosCanais = [];
   let coresDosCanais = [];
   let ACOES = [];
+  let NIVEIS = []; // a velocidade de cada ação, de −1 a 1
   let ENTRADAS = [];
   let CAMPOS_DA_AMOSTRA = 2;
 
@@ -273,8 +276,14 @@
   fonte.addEventListener("estrutura", (evento) => {
     estrutura = JSON.parse(evento.data);
     nomesDosCanais = estrutura.nomesDosCanais;
-    coresDosCanais = nomesDosCanais.map((nome) => corDoCanal[nome] ?? cores.suave);
+    coresDosCanais = nomesDosCanais.map(corDe);
     ACOES = estrutura.acoes;
+    NIVEIS = estrutura.niveis ?? [1, -1];
+    if (ACOES.length > 2) {
+      $("sobreAsAcoes").textContent = "escolhem uma de 11 ações: subir na velocidade 5 a 1, parar (0) ou descer na velocidade 1 a 5";
+      $("sobreAsAlcas").textContent =
+        "A velocidade que sai das alças, de −5 (descer rápido) a 5 (subir rápido): a soma, ação por ação, do quanto o GPi soltou a alça vezes a velocidade dela, nos últimos 10 s.";
+    }
     ENTRADAS = estrutura.entradas;
     CAMPOS_DA_AMOSTRA = 2 + 2 * nomesDosCanais.length;
     $("legendaDosCanais").innerHTML =
@@ -355,6 +364,8 @@
   }
 
   const ultimaAmostra = () => (amostras.length ? amostras.slice(-CAMPOS_DA_AMOSTRA) : null);
+  // o comando da raquete na amostra que começa em k (−1 a 1): a soma das alças vezes os níveis
+  const comandoNaAmostra = (lista, k) => Math.max(-1, Math.min(1, ACOES.reduce((soma, acao, i) => soma + lista[k + 2 + acao] * NIVEIS[i], 0)));
 
   function desenharCampo() {
     const { ctx, largura, altura } = preparar($("campo"));
@@ -423,16 +434,16 @@
     desenharRaquete(px(linhaDoCerebro) + (linhaDoCerebro === 0 ? larguraDaRaquete / 2 : -larguraDaRaquete / 2), raquete, cores.cerebro);
     desenharRaquete(px(linhaDoAdversario) + (linhaDoAdversario === 1 ? -larguraDaRaquete / 2 : larguraDaRaquete / 2), adversario, cores.algoritmo);
 
-    // o comando do cérebro agora (alça de subir − alça de descer): seta ao lado da raquete
+    // o comando do cérebro agora: seta ao lado da raquete
     const ultima = ultimaAmostra();
     if (ultima) {
-      const comando = Math.max(-1, Math.min(1, ultima[2 + ACOES[0]] - ultima[2 + ACOES[1]]));
+      const comando = comandoNaAmostra(ultima, 0);
       if (Math.abs(comando) > 0.1) {
         const x = px(linhaDoCerebro) + larguraDaRaquete + 16;
         const y = py(raquete);
         const d = comando > 0 ? -1 : 1;
         ctx.globalAlpha = 0.35 + 0.65 * Math.abs(comando);
-        ctx.fillStyle = comando > 0 ? coresDosCanais[ACOES[0]] : coresDosCanais[ACOES[1]];
+        ctx.fillStyle = comando > 0 ? corDoCanal.subir : corDoCanal.descer;
         ctx.beginPath();
         ctx.moveTo(x, y + d * (4 + 12 * Math.abs(comando)));
         ctx.lineTo(x - 7, y + d * 2);
@@ -463,7 +474,7 @@
     ctx.font = "12px system-ui, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
-    ctx.fillText(`bola: ${decimal(quadro.posicoes.travessia / 1000, 2)} s por travessia`, esquerda + 8, topo + A - 8);
+    ctx.fillText(`bola: ${decimal(quadro.posicoes.travessia / 1000, 2)} s por travessia`, px(0.12), topo + A - 8);
     if (pausado) {
       ctx.textAlign = "center";
       ctx.font = "600 14px system-ui, sans-serif";
@@ -497,13 +508,20 @@
     ctx.font = "11px system-ui, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
+    // canais finos demais para um rótulo cada (as 11 velocidades) ganham um rótulo só
+    const finos = [];
     estrutura.canais.forEach(([de, ate], k) => {
       ctx.fillStyle = coresDosCanais[k];
       ctx.globalAlpha = 0.07;
       ctx.fillRect(esquerda, de * linhaDeNeuronio, larguraUtil, (ate - de + 1) * linhaDeNeuronio);
       ctx.globalAlpha = 1;
-      ctx.fillText(nomesDosCanais[k], esquerda - 6, ((de + ate + 1) / 2) * linhaDeNeuronio);
+      if ((ate - de + 1) * linhaDeNeuronio < 10) finos.push(de, ate);
+      else ctx.fillText(nomesDosCanais[k], esquerda - 6, ((de + ate + 1) / 2) * linhaDeNeuronio);
     });
+    if (finos.length) {
+      ctx.fillStyle = cores.texto;
+      ctx.fillText("ações", esquerda - 6, ((finos[0] + finos.at(-1) + 1) / 2) * linhaDeNeuronio);
+    }
     ctx.fillStyle = cores.suave;
     const fimDosCanais = estrutura.canais.at(-1)[1] + 1;
     ctx.fillText("outros E", esquerda - 6, ((fimDosCanais + estrutura.nExc) / 2) * linhaDeNeuronio);
@@ -518,7 +536,8 @@
     }
   }
 
-  // Linhas de amostras nos últimos 10 s: campos = índices na amostra, cada um com a sua cor
+  // Linhas de amostras nos últimos 10 s: campos = índices na amostra (ou funções da amostra que começa
+  // em k), cada um com a sua cor
   function desenharSinais(canvas, campos, coresDasLinhas, { minimo, maximo, referencias = [], depois = null }) {
     const { ctx, largura, altura } = preparar(canvas);
     const esquerda = 34;
@@ -545,7 +564,8 @@
       ctx.beginPath();
       for (let k = 0; k < amostras.length; k += CAMPOS_DA_AMOSTRA) {
         const px = x(amostras[k]);
-        const py = y(Math.min(maximo, Math.max(minimo, amostras[k + campo])));
+        const valor = typeof campo === "function" ? campo(k) : amostras[k + campo];
+        const py = y(Math.min(maximo, Math.max(minimo, valor)));
         if (k === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
@@ -555,6 +575,14 @@
   }
 
   function desenharAlcas() {
+    if (ACOES.length > 2) {
+      desenharSinais($("alcas"), [(k) => 5 * comandoNaAmostra(amostras, k)], [cores.cerebro], {
+        minimo: -5,
+        maximo: 5,
+        referencias: [{ valor: 5, rotulo: "5" }, { valor: 0, rotulo: "0" }, { valor: -5, rotulo: "−5" }],
+      });
+      return;
+    }
     desenharSinais($("alcas"), ACOES.map((k) => 2 + k), ACOES.map((k) => coresDosCanais[k]), {
       minimo: 0,
       maximo: 1,
@@ -640,6 +668,7 @@
     const topo = 30;
     const largo = Math.min(140, (largura - esquerda - 8) / ENTRADAS.length);
     const alto = Math.min(48, (altura - topo - 4) / ACOES.length);
+    const comNumeros = alto >= 14; // com as 11 velocidades, as linhas ficam baixas demais para os números
     ctx.font = "11px system-ui, sans-serif";
     ctx.textBaseline = "middle";
     ENTRADAS.forEach((canal, i) => {
@@ -657,17 +686,20 @@
     ACOES.forEach((acao, j) => {
       ctx.textAlign = "right";
       ctx.fillStyle = coresDosCanais[acao];
+      ctx.font = `${Math.max(8, Math.min(11, alto - 1))}px system-ui, sans-serif`;
       ctx.fillText(nomesDosCanais[acao], esquerda - 6, topo + (j + 0.5) * alto);
       ENTRADAS.forEach((canal, i) => {
         const w = quadro.pesos[acao][canal];
         const forca = Math.min(1, w / PESO_MAXIMO);
         ctx.fillStyle = `rgba(76, 194, 255, ${0.08 + 0.85 * forca})`;
         ctx.fillRect(esquerda + i * largo + 1, topo + j * alto + 1, largo - 2, alto - 2);
-        if ((mapaCerto[nomesDosCanais[acao]] ?? []).includes(nomesDosCanais[canal])) {
+        if ((mapaCerto[nomesDosCanais[acao].split(" ")[0]] ?? []).includes(nomesDosCanais[canal])) {
           ctx.strokeStyle = cores.ok;
-          ctx.lineWidth = 2;
-          ctx.strokeRect(esquerda + i * largo + 2, topo + j * alto + 2, largo - 4, alto - 4);
+          const borda = comNumeros ? 2 : 1;
+          ctx.lineWidth = borda;
+          ctx.strokeRect(esquerda + i * largo + borda, topo + j * alto + borda, largo - 2 * borda, alto - 2 * borda);
         }
+        if (!comNumeros) return;
         ctx.textAlign = "center";
         ctx.fillStyle = forca > 0.55 ? "#0d1117" : cores.texto;
         ctx.fillText(decimal(w, 2), esquerda + (i + 0.5) * largo, topo + (j + 0.5) * alto);
